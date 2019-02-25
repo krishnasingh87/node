@@ -44,12 +44,13 @@
 
 #if defined(NODE_HAVE_I18N_SUPPORT)
 
+#include "base_object-inl.h"
+#include "env-inl.h"
 #include "node.h"
 #include "node_buffer.h"
 #include "node_errors.h"
-#include "env-inl.h"
+#include "node_internals.h"
 #include "util-inl.h"
-#include "base_object-inl.h"
 #include "v8.h"
 
 #include <unicode/utypes.h>
@@ -91,6 +92,7 @@ using v8::Int32;
 using v8::Isolate;
 using v8::Local;
 using v8::MaybeLocal;
+using v8::NewStringType;
 using v8::Object;
 using v8::ObjectTemplate;
 using v8::String;
@@ -169,6 +171,11 @@ class ConverterObject : public BaseObject, Converter {
     Environment* env = Environment::GetCurrent(args);
     HandleScope scope(env->isolate());
 
+    Local<ObjectTemplate> t = ObjectTemplate::New(env->isolate());
+    t->SetInternalFieldCount(1);
+    Local<Object> obj;
+    if (!t->NewInstance(env->context()).ToLocal(&obj)) return;
+
     CHECK_GE(args.Length(), 2);
     Utf8Value label(env->isolate(), args[0]);
     int flags = args[1]->Uint32Value(env->context()).ToChecked();
@@ -188,9 +195,6 @@ class ConverterObject : public BaseObject, Converter {
                           nullptr, nullptr, nullptr, &status);
     }
 
-    Local<ObjectTemplate> t = ObjectTemplate::New(env->isolate());
-    t->SetInternalFieldCount(1);
-    Local<Object> obj = t->NewInstance(env->context()).ToLocalChecked();
     new ConverterObject(env, obj, conv, ignoreBOM);
     args.GetReturnValue().Set(obj);
   }
@@ -251,15 +255,13 @@ class ConverterObject : public BaseObject, Converter {
     args.GetReturnValue().Set(status);
   }
 
-  void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
-  }
-
-  ADD_MEMORY_INFO_NAME(ConverterObject)
+  SET_NO_MEMORY_INFO()
+  SET_MEMORY_INFO_NAME(ConverterObject)
+  SET_SELF_SIZE(ConverterObject)
 
  protected:
   ConverterObject(Environment* env,
-                  v8::Local<v8::Object> wrap,
+                  Local<Object> wrap,
                   UConverter* converter,
                   bool ignoreBOM,
                   const char* sub = nullptr) :
@@ -508,68 +510,7 @@ void ICUErrorName(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(
       String::NewFromUtf8(env->isolate(),
                           u_errorName(status),
-                          v8::NewStringType::kNormal).ToLocalChecked());
-}
-
-#define TYPE_ICU "icu"
-#define TYPE_UNICODE "unicode"
-#define TYPE_CLDR "cldr"
-#define TYPE_TZ "tz"
-
-/**
- * This is the workhorse function that deals with the actual version info.
- * Get an ICU version.
- * @param type the type of version to get. One of VERSION_TYPES
- * @param buf optional buffer for result
- * @param status ICU error status. If failure, assume result is undefined.
- * @return version number, or NULL. May or may not be buf.
- */
-const char* GetVersion(const char* type,
-                       char buf[U_MAX_VERSION_STRING_LENGTH],
-                       UErrorCode* status) {
-  if (!strcmp(type, TYPE_ICU)) {
-    return U_ICU_VERSION;
-  } else if (!strcmp(type, TYPE_UNICODE)) {
-    return U_UNICODE_VERSION;
-  } else if (!strcmp(type, TYPE_TZ)) {
-    return icu::TimeZone::getTZDataVersion(*status);
-  } else if (!strcmp(type, TYPE_CLDR)) {
-    UVersionInfo versionArray;
-    ulocdata_getCLDRVersion(versionArray, status);
-    if (U_SUCCESS(*status)) {
-      u_versionToString(versionArray, buf);
-      return buf;
-    }
-  }
-  // Fall through - unknown type or error case
-  return nullptr;
-}
-
-void GetVersion(const FunctionCallbackInfo<Value>& args) {
-  Environment* env = Environment::GetCurrent(args);
-  if ( args.Length() == 0 ) {
-    // With no args - return a comma-separated list of allowed values
-      args.GetReturnValue().Set(
-          String::NewFromUtf8(env->isolate(),
-            TYPE_ICU ","
-            TYPE_UNICODE ","
-            TYPE_CLDR ","
-            TYPE_TZ, v8::NewStringType::kNormal).ToLocalChecked());
-  } else {
-    CHECK_GE(args.Length(), 1);
-    CHECK(args[0]->IsString());
-    Utf8Value val(env->isolate(), args[0]);
-    UErrorCode status = U_ZERO_ERROR;
-    char buf[U_MAX_VERSION_STRING_LENGTH] = "";  // Possible output buffer.
-    const char* versionString = GetVersion(*val, buf, &status);
-
-    if (U_SUCCESS(status) && versionString) {
-      // Success.
-      args.GetReturnValue().Set(
-          String::NewFromUtf8(env->isolate(),
-          versionString, v8::NewStringType::kNormal).ToLocalChecked());
-    }
-  }
+                          NewStringType::kNormal).ToLocalChecked());
 }
 
 }  // anonymous namespace
@@ -724,7 +665,7 @@ static void ToUnicode(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(
       String::NewFromUtf8(env->isolate(),
                           *buf,
-                          v8::NewStringType::kNormal,
+                          NewStringType::kNormal,
                           len).ToLocalChecked());
 }
 
@@ -734,7 +675,7 @@ static void ToASCII(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsString());
   Utf8Value val(env->isolate(), args[0]);
   // optional arg
-  bool lenient = args[1]->BooleanValue(env->context()).FromJust();
+  bool lenient = args[1]->BooleanValue(env->isolate());
   enum idna_mode mode = lenient ? IDNA_LENIENT : IDNA_DEFAULT;
 
   MaybeStackBuffer<char> buf;
@@ -747,7 +688,7 @@ static void ToASCII(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(
       String::NewFromUtf8(env->isolate(),
                           *buf,
-                          v8::NewStringType::kNormal,
+                          NewStringType::kNormal,
                           len).ToLocalChecked());
 }
 
@@ -869,7 +810,6 @@ void Initialize(Local<Object> target,
   env->SetMethod(target, "toUnicode", ToUnicode);
   env->SetMethod(target, "toASCII", ToASCII);
   env->SetMethod(target, "getStringWidth", GetStringWidth);
-  env->SetMethod(target, "getVersion", GetVersion);
 
   // One-shot converters
   env->SetMethod(target, "icuErrName", ICUErrorName);
@@ -884,6 +824,6 @@ void Initialize(Local<Object> target,
 }  // namespace i18n
 }  // namespace node
 
-NODE_BUILTIN_MODULE_CONTEXT_AWARE(icu, node::i18n::Initialize)
+NODE_MODULE_CONTEXT_AWARE_INTERNAL(icu, node::i18n::Initialize)
 
 #endif  // NODE_HAVE_I18N_SUPPORT

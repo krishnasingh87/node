@@ -35,11 +35,11 @@ assert.strictEqual(require.main.id, '.');
 assert.strictEqual(require.main, module);
 assert.strictEqual(process.mainModule, module);
 
-// assert that it's *not* the main module in the required module.
+// Assert that it's *not* the main module in the required module.
 require('../fixtures/not-main-module.js');
 
 {
-  // require a file with a request that includes the extension
+  // Require a file with a request that includes the extension
   const a_js = require('../fixtures/a.js');
   assert.strictEqual(a_js.number, 42);
 }
@@ -104,6 +104,12 @@ const d2 = require('../fixtures/b/d');
 assert.strictEqual(require('../fixtures/packages/index').ok, 'ok');
 assert.strictEqual(require('../fixtures/packages/main').ok, 'ok');
 assert.strictEqual(require('../fixtures/packages/main-index').ok, 'ok');
+assert.strictEqual(require('../fixtures/packages/missing-main').ok, 'ok');
+
+assert.throws(
+  function() { require('../fixtures/packages/unparseable'); },
+  /^SyntaxError: Error parsing/
+);
 
 {
   console.error('test cycles containing a .. path');
@@ -120,12 +126,12 @@ require('../fixtures/node_modules/foo');
 
 {
   console.error('test name clashes');
-  // this one exists and should import the local module
+  // This one exists and should import the local module
   const my_path = require('../fixtures/path');
   assert.ok(my_path.path_func instanceof Function);
   // this one does not exist and should throw
   assert.throws(function() { require('./utils'); },
-                /^Error: Cannot find module '\.\/utils'$/);
+                /^Error: Cannot find module '\.\/utils'/);
 }
 
 let errorThrown = false;
@@ -164,12 +170,13 @@ assert.strictEqual(require('../fixtures/registerExt2').custom, 'passed');
 assert.strictEqual(require('../fixtures/foo').foo, 'ok');
 
 // Should not attempt to load a directory
-try {
-  tmpdir.refresh();
-  require(tmpdir.path);
-} catch (err) {
-  assert.strictEqual(err.message, `Cannot find module '${tmpdir.path}'`);
-}
+assert.throws(
+  () => {
+    tmpdir.refresh();
+    require(tmpdir.path);
+  },
+  (err) => err.message.startsWith(`Cannot find module '${tmpdir.path}`)
+);
 
 {
   // Check load order is as expected
@@ -229,7 +236,7 @@ try {
 
 
 {
-  // now verify that module.children contains all the different
+  // Now verify that module.children contains all the different
   // modules that we've required, and that all of them contain
   // the appropriate children, and so on.
 
@@ -245,7 +252,6 @@ try {
 
   assert.deepStrictEqual(children, {
     'common/index.js': {
-      'common/fixtures.js': {},
       'common/tmpdir.js': {}
     },
     'fixtures/not-main-module.js': {},
@@ -267,6 +273,7 @@ try {
     'fixtures/packages/index/index.js': {},
     'fixtures/packages/main/package-main-module.js': {},
     'fixtures/packages/main-index/package-main-module/index.js': {},
+    'fixtures/packages/missing-main/index.js': {},
     'fixtures/cycles/root.js': {
       'fixtures/cycles/folder/foo.js': {}
     },

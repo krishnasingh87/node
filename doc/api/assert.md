@@ -163,6 +163,10 @@ An alias of [`assert.ok()`][].
 <!-- YAML
 added: v0.1.21
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/25008
+    description: The type tags are now properly compared and there are a couple
+                 minor comparison adjustments to make the check less surprising.
   - version: v9.0.0
     pr-url: https://github.com/nodejs/node/pull/15001
     description: The `Error` names and messages are now properly compared
@@ -191,25 +195,38 @@ An alias of [`assert.deepStrictEqual()`][].
 
 > Stability: 0 - Deprecated: Use [`assert.deepStrictEqual()`][] instead.
 
-Tests for deep equality between the `actual` and `expected` parameters.
-Primitive values are compared with the [Abstract Equality Comparison][]
-( `==` ).
+Tests for deep equality between the `actual` and `expected` parameters. Consider
+using [`assert.deepStrictEqual()`][] instead. [`assert.deepEqual()`][] can have
+potentially surprising results.
 
-Only [enumerable "own" properties][] are considered. The
-[`assert.deepEqual()`][] implementation does not test the
-[`[[Prototype]]`][prototype-spec] of objects or enumerable own [`Symbol`][]
-properties. For such checks, consider using [`assert.deepStrictEqual()`][]
-instead. [`assert.deepEqual()`][] can have potentially surprising results. The
-following example does not throw an `AssertionError` because the properties on
-the [`RegExp`][] object are not enumerable:
+"Deep" equality means that the enumerable "own" properties of child objects
+are also recursively evaluated by the following rules.
+
+### Comparison details
+
+* Primitive values are compared with the [Abstract Equality Comparison][]
+  ( `==` ).
+* [Type tags][Object.prototype.toString()] of objects should be the same.
+* Only [enumerable "own" properties][] are considered.
+* [`Error`][] names and messages are always compared, even if these are not
+  enumerable properties.
+* [Object wrappers][] are compared both as objects and unwrapped values.
+* `Object` properties are compared unordered.
+* [`Map`][] keys and [`Set`][] items are compared unordered.
+* Recursion stops when both sides differ or both sides encounter a circular
+  reference.
+* Implementation does not test the [`[[Prototype]]`][prototype-spec] of
+  objects.
+* [`Symbol`][] properties are not compared.
+* [`WeakMap`][] and [`WeakSet`][] comparison does not rely on their values.
+
+The following example does not throw an `AssertionError` because the primitives
+are considered equal by the [Abstract Equality Comparison][] ( `==` ).
 
 ```js
 // WARNING: This does not throw an AssertionError!
-assert.deepEqual(/a/gi, new Date());
+assert.deepEqual('+00000000', false);
 ```
-
-An exception is made for [`Map`][] and [`Set`][]. `Map`s and `Set`s have their
-contained items compared too, as expected.
 
 "Deep" equality means that the enumerable "own" properties of child objects
 are evaluated also:
@@ -304,7 +321,7 @@ are recursively evaluated also by the following rules.
 * Enumerable own [`Symbol`][] properties are compared as well.
 * [Object wrappers][] are compared both as objects and unwrapped values.
 * `Object` properties are compared unordered.
-* `Map` keys and `Set` items are compared unordered.
+* [`Map`][] keys and [`Set`][] items are compared unordered.
 * Recursion stops when both sides differ or both sides encounter a circular
   reference.
 * [`WeakMap`][] and [`WeakSet`][] comparison does not rely on their values. See
@@ -426,10 +443,10 @@ the function does not return a promise, `assert.doesNotReject()` will return a
 rejected `Promise` with an [`ERR_INVALID_RETURN_VALUE`][] error. In both cases
 the error handler is skipped.
 
-Please note: Using `assert.doesNotReject()` is actually not useful because there
-is little benefit by catching a rejection and then rejecting it again. Instead,
-consider adding a comment next to the specific code path that should not reject
-and keep error messages as expressive as possible.
+Using `assert.doesNotReject()` is actually not useful because there is little
+benefit in catching a rejection and then rejecting it again. Instead, consider
+adding a comment next to the specific code path that should not reject and keep
+error messages as expressive as possible.
 
 If specified, `error` can be a [`Class`][], [`RegExp`][] or a validation
 function. See [`assert.throws()`][] for more details.
@@ -472,8 +489,8 @@ changes:
 
 Asserts that the function `fn` does not throw an error.
 
-Please note: Using `assert.doesNotThrow()` is actually not useful because there
-is no benefit by catching an error and then rethrowing it. Instead, consider
+Using `assert.doesNotThrow()` is actually not useful because there
+is no benefit in catching an error and then rethrowing it. Instead, consider
 adding a comment next to the specific code path that should not throw and keep
 error messages as expressive as possible.
 
@@ -1245,8 +1262,8 @@ assert.throws(throwingFirst, /Second$/);
 Due to the confusing notation, it is recommended not to use a string as the
 second argument. This might lead to difficult-to-spot errors.
 
-[`ERR_INVALID_RETURN_VALUE`]: errors.html#errors_err_invalid_return_value
 [`Class`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes
+[`ERR_INVALID_RETURN_VALUE`]: errors.html#errors_err_invalid_return_value
 [`Error.captureStackTrace`]: errors.html#errors_error_capturestacktrace_targetobject_constructoropt
 [`Error`]: errors.html#errors_class_error
 [`Map`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map
@@ -1267,10 +1284,10 @@ second argument. This might lead to difficult-to-spot errors.
 [`assert.throws()`]: #assert_assert_throws_fn_error_message
 [`strict mode`]: #assert_strict_mode
 [Abstract Equality Comparison]: https://tc39.github.io/ecma262/#sec-abstract-equality-comparison
+[Object wrappers]: https://developer.mozilla.org/en-US/docs/Glossary/Primitive#Primitive_wrapper_objects_in_JavaScript
 [Object.prototype.toString()]: https://tc39.github.io/ecma262/#sec-object.prototype.tostring
 [SameValue Comparison]: https://tc39.github.io/ecma262/#sec-samevalue
 [Strict Equality Comparison]: https://tc39.github.io/ecma262/#sec-strict-equality-comparison
 [enumerable "own" properties]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Enumerability_and_ownership_of_properties
 [mdn-equality-guide]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Equality_comparisons_and_sameness
 [prototype-spec]: https://tc39.github.io/ecma262/#sec-ordinary-object-internal-methods-and-internal-slots
-[Object wrappers]: https://developer.mozilla.org/en-US/docs/Glossary/Primitive#Primitive_wrapper_objects_in_JavaScript

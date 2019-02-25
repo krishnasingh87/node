@@ -17,10 +17,12 @@ const bench = common.createBenchmark(main, {
 });
 
 function main({ dur, len, type }) {
-  const { internalBinding } = require('internal/test/binding');
-  const { TCP, constants: TCPConstants } = process.binding('tcp_wrap');
-  const { TCPConnectWrap } = process.binding('tcp_wrap');
-  const { WriteWrap } = internalBinding('stream_wrap');
+  const {
+    TCP,
+    TCPConnectWrap,
+    constants: TCPConstants
+  } = common.binding('tcp_wrap');
+  const { WriteWrap } = common.binding('stream_wrap');
   const PORT = common.PORT;
 
   const serverHandle = new TCP(TCPConstants.SERVER);
@@ -76,7 +78,7 @@ function main({ dur, len, type }) {
       if (err) {
         fail(err, 'write');
       } else if (!writeReq.async) {
-        process.nextTick(function() {
+        process.nextTick(() => {
           afterWrite(0, clientHandle);
         });
       }
@@ -107,15 +109,15 @@ function main({ dur, len, type }) {
 
     connectReq.oncomplete = function() {
       var bytes = 0;
-      clientHandle.onread = function(nread, buffer) {
-        // we're not expecting to ever get an EOF from the client.
-        // just lots of data forever.
-        if (nread < 0)
-          fail(nread, 'read');
+      clientHandle.onread = function(buffer) {
+        // We're not expecting to ever get an EOF from the client.
+        // Just lots of data forever.
+        if (!buffer)
+          fail('read');
 
-        // don't slice the buffer.  the point of this is to isolate, not
+        // Don't slice the buffer. The point of this is to isolate, not
         // simulate real traffic.
-        bytes += buffer.length;
+        bytes += buffer.byteLength;
       };
 
       clientHandle.readStart();
@@ -123,7 +125,7 @@ function main({ dur, len, type }) {
       // the meat of the benchmark is right here:
       bench.start();
 
-      setTimeout(function() {
+      setTimeout(() => {
         // report in Gb/sec
         bench.end((bytes * 8) / (1024 * 1024 * 1024));
         process.exit(0);

@@ -29,7 +29,7 @@ const {
 } = require('../common/hijackstdio');
 const assert = require('assert');
 const fixtures = require('../common/fixtures');
-const hasInspector = process.config.variables.v8_enable_inspector === 1;
+const hasInspector = process.features.inspector;
 
 if (!common.isMainThread)
   common.skip('process.chdir is not available in Workers');
@@ -154,14 +154,13 @@ putIn.run([
   ' one:1',
   '};'
 ]);
-// See: https://github.com/nodejs/node/issues/21586
-// testMe.complete('inner.o', getNoResultsFunction());
 testMe.complete('inner.o', common.mustCall(function(error, data) {
+  assert.deepStrictEqual(data, works);
 }));
 
 putIn.run(['.clear']);
 
-// currently does not work, but should not break, not the {
+// Currently does not work, but should not break, not the {
 putIn.run([
   'var top = function() {',
   'r = function test ()',
@@ -208,13 +207,13 @@ testMe.complete(' ', common.mustCall(function(error, data) {
   clearTimeout(spaceTimeout);
 }));
 
-// tab completion should pick up the global "toString" object, and
+// Tab completion should pick up the global "toString" object, and
 // any other properties up the "global" object's prototype chain
 testMe.complete('toSt', common.mustCall(function(error, data) {
   assert.deepStrictEqual(data, [['toString'], 'toSt']);
 }));
 
-// own properties should shadow properties on the prototype
+// Own properties should shadow properties on the prototype
 putIn.run(['.clear']);
 putIn.run([
   'var x = Object.create(null);',
@@ -458,7 +457,7 @@ const testNonGlobal = repl.start({
   useGlobal: false
 });
 
-const builtins = [['Infinity', '', 'Int16Array', 'Int32Array',
+const builtins = [['Infinity', 'Int16Array', 'Int32Array',
                    'Int8Array'], 'I'];
 
 if (common.hasIntl) {

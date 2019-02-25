@@ -50,25 +50,25 @@ const ciphers = crypto.getCiphers();
 
 const expectedWarnings = common.hasFipsCrypto ?
   [] : [
-    ['Use Cipheriv for counter mode of aes-192-gcm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-192-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-192-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-128-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-128-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-128-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode],
-    ['Use Cipheriv for counter mode of aes-256-ccm', common.noWarnCode]
+    ['Use Cipheriv for counter mode of aes-192-gcm'],
+    ['Use Cipheriv for counter mode of aes-192-ccm'],
+    ['Use Cipheriv for counter mode of aes-192-ccm'],
+    ['Use Cipheriv for counter mode of aes-128-ccm'],
+    ['Use Cipheriv for counter mode of aes-128-ccm'],
+    ['Use Cipheriv for counter mode of aes-128-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm'],
+    ['Use Cipheriv for counter mode of aes-256-ccm']
   ];
 
 const expectedDeprecationWarnings = [
@@ -94,9 +94,10 @@ for (const test of TEST_CASES) {
 
   const isCCM = /^aes-(128|192|256)-ccm$/.test(test.algo);
   const isOCB = /^aes-(128|192|256)-ocb$/.test(test.algo);
+  const isChacha20Poly1305 = test.algo === 'chacha20-poly1305';
 
   let options;
-  if (isCCM || isOCB)
+  if (isCCM || isOCB || isChacha20Poly1305)
     options = { authTagLength: test.tag.length / 2 };
 
   const inputEncoding = test.plainIsHex ? 'hex' : 'ascii';
@@ -121,7 +122,7 @@ for (const test of TEST_CASES) {
     hex += encrypt.final('hex');
 
     const auth_tag = encrypt.getAuthTag();
-    // only test basic encryption run if output is marked as tampered.
+    // Only test basic encryption run if output is marked as tampered.
     if (!test.tampered) {
       assert.strictEqual(hex, test.ct);
       assert.strictEqual(auth_tag.toString('hex'), test.tag);
@@ -152,7 +153,7 @@ for (const test of TEST_CASES) {
         msg += decrypt.final(outputEncoding);
         assert.strictEqual(msg, test.plain);
       } else {
-        // assert that final throws if input data could not be verified!
+        // Assert that final throws if input data could not be verified!
         assert.throws(function() { decrypt.final('hex'); }, errMessages.auth);
       }
     }
@@ -169,7 +170,7 @@ for (const test of TEST_CASES) {
       let hex = encrypt.update(test.plain, 'ascii', 'hex');
       hex += encrypt.final('hex');
       const auth_tag = encrypt.getAuthTag();
-      // only test basic encryption run if output is marked as tampered.
+      // Only test basic encryption run if output is marked as tampered.
       if (!test.tampered) {
         assert.strictEqual(hex, test.ct);
         assert.strictEqual(auth_tag.toString('hex'), test.tag);
@@ -191,7 +192,7 @@ for (const test of TEST_CASES) {
         msg += decrypt.final('ascii');
         assert.strictEqual(msg, test.plain);
       } else {
-        // assert that final throws if input data could not be verified!
+        // Assert that final throws if input data could not be verified!
         assert.throws(function() { decrypt.final('ascii'); }, errMessages.auth);
       }
     }

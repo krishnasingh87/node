@@ -1,3 +1,6 @@
+from __future__ import print_function
+
+import json
 import sys
 import errno
 import optparse
@@ -42,14 +45,13 @@ parser = optparse.OptionParser()
 
 valid_os = ('win', 'mac', 'solaris', 'freebsd', 'openbsd', 'linux',
             'android', 'aix', 'cloudabi')
-valid_arch = ('arm', 'arm64', 'ia32', 'mips', 'mipsel', 'mips64el', 'ppc',
+valid_arch = ('arm', 'arm64', 'ia32', 'ppc',
               'ppc64', 'x32','x64', 'x86', 'x86_64', 's390', 's390x')
 valid_arm_float_abi = ('soft', 'softfp', 'hard')
 valid_arm_fpu = ('vfp', 'vfpv3', 'vfpv3-d16', 'neon')
-valid_mips_arch = ('loongson', 'r1', 'r2', 'r6', 'rx')
-valid_mips_fpu = ('fp32', 'fp64', 'fpxx')
-valid_mips_float_abi = ('soft', 'hard')
 valid_intl_modes = ('none', 'small-icu', 'full-icu', 'system-icu')
+with open ('tools/icu/icu_versions.json') as f:
+  icu_versions = json.load(f)
 
 # create option groups
 shared_optgroup = optparse.OptionGroup(parser, "Shared libraries",
@@ -168,6 +170,11 @@ parser.add_option('--openssl-fips',
     dest='openssl_fips',
     help='Build OpenSSL using FIPS canister .o file in supplied folder')
 
+parser.add_option('--openssl-is-fips',
+    action='store_true',
+    dest='openssl_is_fips',
+    help='specifies that the OpenSSL library is FIPS compatible')
+
 parser.add_option('--openssl-use-def-ca-store',
     action='store_true',
     dest='use_openssl_ca_store',
@@ -178,6 +185,11 @@ parser.add_option('--openssl-system-ca-path',
     dest='openssl_system_ca_path',
     help='Use the specified path to system CA (PEM format) in addition to '
          'the OpenSSL supplied CA store or compiled-in Mozilla CA copy.')
+
+parser.add_option('--experimental-http-parser',
+    action='store_true',
+    dest='experimental_http_parser',
+    help='(no-op)')
 
 shared_optgroup.add_option('--shared-http-parser',
     action='store_true',
@@ -353,30 +365,6 @@ parser.add_option('--with-arm-fpu',
     help='ARM FPU mode ({0}) [default: %default]'.format(
         ', '.join(valid_arm_fpu)))
 
-parser.add_option('--with-mips-arch-variant',
-    action='store',
-    dest='mips_arch_variant',
-    default='r2',
-    choices=valid_mips_arch,
-    help='MIPS arch variant ({0}) [default: %default]'.format(
-        ', '.join(valid_mips_arch)))
-
-parser.add_option('--with-mips-fpu-mode',
-    action='store',
-    dest='mips_fpu_mode',
-    default='fp32',
-    choices=valid_mips_fpu,
-    help='MIPS FPU mode ({0}) [default: %default]'.format(
-        ', '.join(valid_mips_fpu)))
-
-parser.add_option('--with-mips-float-abi',
-    action='store',
-    dest='mips_float_abi',
-    default='hard',
-    choices=valid_mips_float_abi,
-    help='MIPS floating-point ABI ({0}) [default: %default]'.format(
-        ', '.join(valid_mips_float_abi)))
-
 parser.add_option('--with-dtrace',
     action='store_true',
     dest='with_dtrace',
@@ -386,6 +374,12 @@ parser.add_option('--with-etw',
     action='store_true',
     dest='with_etw',
     help='build with ETW (default is true on Windows)')
+
+parser.add_option('--use-largepages',
+    action='store_true',
+    dest='node_use_large_pages',
+    help='build with Large Pages support. This feature is supported only on Linux kernel' +
+         '>= 2.6.38 with Transparent Huge pages enabled')
 
 intl_optgroup.add_option('--with-intl',
     action='store',
@@ -418,17 +412,14 @@ intl_optgroup.add_option('--with-icu-locales',
 intl_optgroup.add_option('--with-icu-source',
     action='store',
     dest='with_icu_source',
-    help='Intl mode: optional local path to icu/ dir, or path/URL of icu source archive.')
+    help='Intl mode: optional local path to icu/ dir, or path/URL of '
+        'the icu4c source archive. '
+        'v%d.x or later recommended.' % icu_versions['minimum_icu'])
 
 parser.add_option('--with-ltcg',
     action='store_true',
     dest='with_ltcg',
     help='Use Link Time Code Generation. This feature is only available on Windows.')
-
-parser.add_option('--with-pch',
-    action='store_true',
-    dest='with_pch',
-    help='Use Precompiled Headers (only available on Windows).')
 
 intl_optgroup.add_option('--download',
     action='store',
@@ -469,6 +460,11 @@ parser.add_option('--without-npm',
     action='store_true',
     dest='without_npm',
     help='do not install the bundled npm (package manager)')
+
+parser.add_option('--without-report',
+    action='store_true',
+    dest='without_report',
+    help='build without report')
 
 # Dummy option for backwards compatibility
 parser.add_option('--with-snapshot',
@@ -555,6 +551,12 @@ parser.add_option('--verbose',
     default=False,
     help='get more output from this script')
 
+parser.add_option('--v8-non-optimized-debug',
+    action='store_true',
+    dest='v8_non_optimized_debug',
+    default=False,
+    help='compile V8 with minimal optimizations and with runtime checks')
+
 # Create compile_commands.json in out/Debug and out/Release.
 parser.add_option('-C',
     action='store_true',
@@ -587,7 +589,7 @@ def print_verbose(x):
   if not options.verbose:
     return
   if type(x) is str:
-    print x
+    print(x)
   else:
     pprint.pprint(x, indent=2)
 
@@ -600,9 +602,13 @@ def b(value):
 
 
 def pkg_config(pkg):
+  """Run pkg-config on the specified package
+  Returns ("-l flags", "-I flags", "-L flags", "version")
+  otherwise (None, None, None, None)"""
   pkg_config = os.environ.get('PKG_CONFIG', 'pkg-config')
   retval = ()
-  for flag in ['--libs-only-l', '--cflags-only-I', '--libs-only-L']:
+  for flag in ['--libs-only-l', '--cflags-only-I',
+               '--libs-only-L', '--modversion']:
     try:
       proc = subprocess.Popen(
           shlex.split(pkg_config) + ['--silence-errors', flag, pkg],
@@ -610,7 +616,7 @@ def pkg_config(pkg):
       val = proc.communicate()[0].strip()
     except OSError as e:
       if e.errno != errno.ENOENT: raise e  # Unexpected error.
-      return (None, None, None)  # No pkg-config/pkgconf installed.
+      return (None, None, None, None)  # No pkg-config/pkgconf installed.
     retval += (val,)
   return retval
 
@@ -627,8 +633,8 @@ def try_check_compiler(cc, lang):
 
   values = (proc.communicate()[0].split() + ['0'] * 7)[0:7]
   is_clang = values[0] == '1'
-  gcc_version = tuple(values[1:1+3])
-  clang_version = tuple(values[4:4+3])
+  gcc_version = tuple(map(int, values[1:1+3]))
+  clang_version = tuple(map(int, values[4:4+3])) if is_clang else None
 
   return (True, is_clang, clang_version, gcc_version)
 
@@ -725,6 +731,8 @@ def check_compiler(o):
   ok, is_clang, clang_version, gcc_version = try_check_compiler(CXX, 'c++')
   if not ok:
     warn('failed to autodetect C++ compiler version (CXX=%s)' % CXX)
+  elif sys.platform.startswith('aix') and gcc_version < (6, 3, 0):
+    warn('C++ compiler too old, need g++ 6.3.0 (CXX=%s)' % CXX)
   elif clang_version < (3, 4, 2) if is_clang else gcc_version < (4, 9, 4):
     warn('C++ compiler too old, need g++ 4.9.4 or clang++ 3.4.2 (CXX=%s)' % CXX)
 
@@ -816,8 +824,6 @@ def host_arch_cc():
     '__aarch64__' : 'arm64',
     '__arm__'     : 'arm',
     '__i386__'    : 'ia32',
-    '__MIPSEL__'  : 'mipsel',
-    '__mips__'    : 'mips',
     '__PPC64__'   : 'ppc64',
     '__PPC__'     : 'ppc64',
     '__x86_64__'  : 'x64',
@@ -833,9 +839,6 @@ def host_arch_cc():
       if rtn != 's390':
         break
 
-  if rtn == 'mipsel' and '_LP64' in k:
-    rtn = 'mips64el'
-
   return rtn
 
 
@@ -849,7 +852,6 @@ def host_arch_win():
     'AMD64'  : 'x64',
     'x86'    : 'ia32',
     'arm'    : 'arm',
-    'mips'   : 'mips',
   }
 
   return matchup.get(arch, 'ia32')
@@ -881,20 +883,11 @@ def configure_arm(o):
   o['variables']['arm_fpu'] = options.arm_fpu or arm_fpu
 
 
-def configure_mips(o):
-  can_use_fpu_instructions = (options.mips_float_abi != 'soft')
-  o['variables']['v8_can_use_fpu_instructions'] = b(can_use_fpu_instructions)
-  o['variables']['v8_use_mips_abi_hardfloat'] = b(can_use_fpu_instructions)
-  o['variables']['mips_arch_variant'] = options.mips_arch_variant
-  o['variables']['mips_fpu_mode'] = options.mips_fpu_mode
-
-
 def gcc_version_ge(version_checked):
   for compiler in [(CC, 'c'), (CXX, 'c++')]:
     ok, is_clang, clang_version, compiler_version = \
       try_check_compiler(compiler[0], compiler[1])
-    compiler_version_num = tuple(map(int, compiler_version))
-    if is_clang or compiler_version_num < version_checked:
+    if is_clang or compiler_version < version_checked:
       return False
   return True
 
@@ -904,6 +897,7 @@ def configure_node(o):
     o['variables']['OS'] = 'android'
   o['variables']['node_prefix'] = options.prefix
   o['variables']['node_install_npm'] = b(not options.without_npm)
+  o['variables']['node_report'] = b(not options.without_report)
   o['default_configuration'] = 'Debug' if options.debug else 'Release'
 
   host_arch = host_arch_win() if os.name == 'nt' else host_arch_cc()
@@ -928,8 +922,6 @@ def configure_node(o):
 
   if target_arch == 'arm':
     configure_arm(o)
-  elif target_arch in ('mips', 'mipsel', 'mips64el'):
-    configure_mips(o)
 
   if flavor == 'aix':
     o['variables']['node_target_type'] = 'static_library'
@@ -997,6 +989,24 @@ def configure_node(o):
   else:
     o['variables']['node_use_dtrace'] = 'false'
 
+  if options.node_use_large_pages and flavor != 'linux':
+    raise Exception(
+      'Large pages are supported only on Linux Systems.')
+  if options.node_use_large_pages and flavor == 'linux':
+    if options.shared or options.enable_static:
+      raise Exception(
+        'Large pages are supported only while creating node executable.')
+    if target_arch!="x64":
+      raise Exception(
+        'Large pages are supported only x64 platform.')
+    # Example full version string: 2.6.32-696.28.1.el6.x86_64
+    FULL_KERNEL_VERSION=os.uname()[2]
+    KERNEL_VERSION=FULL_KERNEL_VERSION.split('-')[0]
+    if KERNEL_VERSION < "2.6.38":
+      raise Exception(
+        'Large pages need Linux kernel version >= 2.6.38')
+  o['variables']['node_use_large_pages'] = b(options.node_use_large_pages)
+
   if options.no_ifaddrs:
     o['defines'] += ['SUNOS_NO_IFADDRS']
 
@@ -1011,11 +1021,6 @@ def configure_node(o):
   o['variables']['node_with_ltcg'] = b(options.with_ltcg)
   if flavor != 'win' and options.with_ltcg:
     raise Exception('Link Time Code Generation is only supported on Windows.')
-
-  if flavor == 'win':
-    o['variables']['node_use_pch'] = b(options.with_pch)
-  else:
-    o['variables']['node_use_pch'] = 'false'
 
   if options.tag:
     o['variables']['node_tag'] = '-' + options.tag
@@ -1076,13 +1081,13 @@ def configure_library(lib, output):
   output['variables']['node_' + shared_lib] = b(getattr(options, shared_lib))
 
   if getattr(options, shared_lib):
-    (pkg_libs, pkg_cflags, pkg_libpath) = pkg_config(lib)
+    (pkg_libs, pkg_cflags, pkg_libpath, pkg_modversion) = pkg_config(lib)
 
     if options.__dict__[shared_lib + '_includes']:
       output['include_dirs'] += [options.__dict__[shared_lib + '_includes']]
     elif pkg_cflags:
-      output['include_dirs'] += (
-          filter(None, map(str.strip, pkg_cflags.split('-I'))))
+      stripped_flags = [flag.strip() for flag in pkg_cflags.split('-I')]
+      output['include_dirs'] += [flag for flag in stripped_flags if flag]
 
     # libpath needs to be provided ahead libraries
     if options.__dict__[shared_lib + '_libpath']:
@@ -1098,7 +1103,7 @@ def configure_library(lib, output):
       output['libraries'] += [pkg_libpath]
 
     default_libs = getattr(options, shared_lib + '_libname')
-    default_libs = map('-l{0}'.format, default_libs.split(','))
+    default_libs = ['-l{0}'.format(lib) for lib in default_libs.split(',')]
 
     if default_libs:
       output['libraries'] += default_libs
@@ -1109,7 +1114,7 @@ def configure_library(lib, output):
 def configure_v8(o):
   o['variables']['v8_enable_gdbjit'] = 1 if options.gdb else 0
   o['variables']['v8_no_strict_aliasing'] = 1  # Work around compiler bugs.
-  o['variables']['v8_optimized_debug'] = 0  # Compile with -O0 in debug builds.
+  o['variables']['v8_optimized_debug'] = 0 if options.v8_non_optimized_debug else 1
   o['variables']['v8_random_seed'] = 0  # Use a random seed for hash tables.
   o['variables']['v8_promise_internal_field_count'] = 1 # Add internal field to promises for async hooks.
   o['variables']['v8_use_snapshot'] = 'false' if options.without_snapshot else 'true'
@@ -1140,8 +1145,11 @@ def configure_openssl(o):
   variables = o['variables']
   variables['node_use_openssl'] = b(not options.without_ssl)
   variables['node_shared_openssl'] = b(options.shared_openssl)
-  variables['openssl_no_asm'] = 1 if options.openssl_no_asm else 0
+  variables['openssl_is_fips'] = b(options.openssl_is_fips)
   variables['openssl_fips'] = ''
+
+  if options.openssl_no_asm:
+    variables['openssl_no_asm'] = 1
 
   if options.without_ssl:
     def without_ssl_error(option):
@@ -1186,7 +1194,7 @@ def configure_openssl(o):
   if options.openssl_no_asm and options.shared_openssl:
     error('--openssl-no-asm is incompatible with --shared-openssl')
 
-  if options.openssl_fips:
+  if options.openssl_fips or options.openssl_fips == '':
      error('FIPS is not supported in this version of Node.js')
 
   configure_library('openssl', o)
@@ -1208,7 +1216,6 @@ def configure_static(o):
 
 
 def write(filename, data):
-  filename = filename
   print_verbose('creating %s' % filename)
   with open(filename, 'w+') as f:
     f.write(data)
@@ -1235,13 +1242,9 @@ def glob_to_var(dir_base, dir_sub, patch_dir):
   return list
 
 def configure_intl(o):
-  icus = [
-    {
-      'url': 'https://sourceforge.net/projects/icu/files/ICU4C/62.1/icu4c-62_1-src.zip',
-      'md5': '408854f7b9b58311b68fab4b4dfc80be',
-    },
-  ]
   def icu_download(path):
+    with open('tools/icu/current_ver.dep') as f:
+      icus = json.load(f)
     # download ICU, if needed
     if not os.access(options.download_path, os.W_OK):
       error('''Cannot write to desired download path.
@@ -1263,8 +1266,8 @@ def configure_intl(o):
         if (md5 == gotmd5):
           return targetfile
         else:
-          error('Expected: %s      *MISMATCH*' % md5)
-          error('\n ** Corrupted ZIP? Delete %s to retry download.\n' % targetfile)
+          warn('Expected: %s      *MISMATCH*' % md5)
+          warn('\n ** Corrupted ZIP? Delete %s to retry download.\n' % targetfile)
     return None
   icu_config = {
     'variables': {}
@@ -1314,14 +1317,20 @@ def configure_intl(o):
     if pkgicu[0] is None:
       error('''Could not load pkg-config data for "icu-i18n".
        See above errors or the README.md.''')
-    (libs, cflags, libpath) = pkgicu
+    (libs, cflags, libpath, icuversion) = pkgicu
+    icu_ver_major = icuversion.split('.')[0]
+    o['variables']['icu_ver_major'] = icu_ver_major
+    if int(icu_ver_major) < icu_versions['minimum_icu']:
+      error('icu4c v%s is too old, v%d.x or later is required.' %
+            (icuversion, icu_versions['minimum_icu']))
     # libpath provides linker path which may contain spaces
     if libpath:
       o['libraries'] += [libpath]
     # safe to split, cannot contain spaces
     o['libraries'] += libs.split()
     if cflags:
-      o['include_dirs'] += filter(None, map(str.strip, cflags.split('-I')))
+      stripped_flags = [flag.strip() for flag in cflags.split('-I')]
+      o['include_dirs'] += [flag for flag in stripped_flags if flag]
     # use the "system" .gyp
     o['variables']['icu_gyp_path'] = 'tools/icu/icu-system.gyp'
     return
@@ -1408,11 +1417,12 @@ def configure_intl(o):
   # ICU source dir relative to tools/icu (for .gyp file)
   o['variables']['icu_path'] = icu_full_path
   if not os.path.isdir(icu_full_path):
-    warn('* ECMA-402 (Intl) support didn\'t find ICU in %s..' % icu_full_path)
     # can we download (or find) a zipfile?
     localzip = icu_download(icu_full_path)
     if localzip:
       nodedownload.unpack(localzip, icu_parent_path)
+    else:
+      warn('* ECMA-402 (Intl) support didn\'t find ICU in %s..' % icu_full_path)
   if not os.path.isdir(icu_full_path):
     error('''Cannot build Intl without ICU in %s.
        Fix, or disable with "--with-intl=none"''' % icu_full_path)
@@ -1432,6 +1442,9 @@ def configure_intl(o):
       icu_ver_major = m.group(1)
   if not icu_ver_major:
     error('Could not read U_ICU_VERSION_SHORT version from %s' % uvernum_h)
+  elif int(icu_ver_major) < icu_versions['minimum_icu']:
+    error('icu4c v%s.x is too old, v%d.x or later is required.' %
+          (icu_ver_major, icu_versions['minimum_icu']))
   icu_endianness = sys.byteorder[0];
   o['variables']['icu_ver_major'] = icu_ver_major
   o['variables']['icu_endianness'] = icu_endianness
@@ -1598,7 +1611,7 @@ config = {
 if options.prefix:
   config['PREFIX'] = options.prefix
 
-config = '\n'.join(map('='.join, config.iteritems())) + '\n'
+config = '\n'.join(['='.join(item) for item in config.items()]) + '\n'
 
 # On Windows there's no reason to search for a different python binary.
 bin_override = None if sys.platform == 'win32' else make_bin_override()

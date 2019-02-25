@@ -33,7 +33,7 @@ const { connect: netConnect } = require('net');
   }));
 }
 
-// check for session connect callback on already connected socket
+// Check for session connect callback on already connected socket
 {
   const server = createServer();
   server.listen(0, mustCall(() => {
@@ -63,7 +63,7 @@ const { connect: netConnect } = require('net');
   connect(authority).on('error', () => {});
 }
 
-// check for error for an invalid protocol (not http or https)
+// Check for error for an invalid protocol (not http or https)
 {
   const authority = 'ssh://localhost';
   expectsError(() => {

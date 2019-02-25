@@ -286,6 +286,7 @@ The properties available on the assigned network address object include:
       netmask: 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff',
       family: 'IPv6',
       mac: '00:00:00:00:00:00',
+      scopeid: 0,
       internal: true,
       cidr: '::1/128'
     }
@@ -304,6 +305,7 @@ The properties available on the assigned network address object include:
       netmask: 'ffff:ffff:ffff:ffff::',
       family: 'IPv6',
       mac: '01:02:03:0a:0b:0c',
+      scopeid: 1,
       internal: false,
       cidr: 'fe80::a00:27ff:fe4e:66a1/64'
     }
@@ -448,6 +450,8 @@ The value of `homedir` returned by `os.userInfo()` is provided by the operating
 system. This differs from the result of `os.homedir()`, which queries several
 environment variables for the home directory before falling back to the
 operating system response.
+
+Throws a [`SystemError`][] if a user has no `username` or `homedir`.
 
 ## OS Constants
 
@@ -891,7 +895,7 @@ The following error constants are exported by `os.constants.errno`:
   </tr>
   <tr>
     <td><code>EOPNOTSUPP</code></td>
-    <td>Indicates that an operation is not supported on the socket.  Note that
+    <td>Indicates that an operation is not supported on the socket. Note that
     while <code>ENOTSUP</code> and <code>EOPNOTSUPP</code> have the same value
     on Linux, according to POSIX.1 these error values should be distinct.)</td>
   </tr>
@@ -1311,6 +1315,7 @@ The following process scheduling constants are exported by
   </tr>
 </table>
 
+[`SystemError`]: errors.html#errors_system_errors
 [`process.arch`]: process.html#process_process_arch
 [`process.platform`]: process.html#process_process_platform
 [Android building]: https://github.com/nodejs/node/blob/master/BUILDING.md#androidandroid-based-devices-eg-firefox-os

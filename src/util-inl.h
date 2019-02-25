@@ -24,7 +24,6 @@
 
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
-#include <limits.h>  // INT_MAX
 #include <cstring>
 #include "util.h"
 
@@ -144,7 +143,7 @@ typename ListHead<T, M>::Iterator ListHead<T, M>::end() const {
 
 template <typename Inner, typename Outer>
 constexpr uintptr_t OffsetOf(Inner Outer::*field) {
-  return reinterpret_cast<uintptr_t>(&(static_cast<Outer*>(0)->*field));
+  return reinterpret_cast<uintptr_t>(&(static_cast<Outer*>(nullptr)->*field));
 }
 
 template <typename Inner, typename Outer>
@@ -161,34 +160,9 @@ ContainerOfHelper<Inner, Outer>::operator TypeName*() const {
 }
 
 template <typename Inner, typename Outer>
-inline ContainerOfHelper<Inner, Outer> ContainerOf(Inner Outer::*field,
-                                                   Inner* pointer) {
+constexpr ContainerOfHelper<Inner, Outer> ContainerOf(Inner Outer::*field,
+                                                      Inner* pointer) {
   return ContainerOfHelper<Inner, Outer>(field, pointer);
-}
-
-template <class TypeName>
-inline v8::Local<TypeName> PersistentToLocal(
-    v8::Isolate* isolate,
-    const Persistent<TypeName>& persistent) {
-  if (persistent.IsWeak()) {
-    return WeakPersistentToLocal(isolate, persistent);
-  } else {
-    return StrongPersistentToLocal(persistent);
-  }
-}
-
-template <class TypeName>
-inline v8::Local<TypeName> StrongPersistentToLocal(
-    const Persistent<TypeName>& persistent) {
-  return *reinterpret_cast<v8::Local<TypeName>*>(
-      const_cast<Persistent<TypeName>*>(&persistent));
-}
-
-template <class TypeName>
-inline v8::Local<TypeName> WeakPersistentToLocal(
-    v8::Isolate* isolate,
-    const Persistent<TypeName>& persistent) {
-  return v8::Local<TypeName>::New(isolate, persistent);
 }
 
 inline v8::Local<v8::String> OneByteString(v8::Isolate* isolate,
@@ -403,8 +377,9 @@ inline char* UncheckedCalloc(size_t n) { return UncheckedCalloc<char>(n); }
 void ThrowErrStringTooLong(v8::Isolate* isolate);
 
 v8::MaybeLocal<v8::Value> ToV8Value(v8::Local<v8::Context> context,
-                                    const std::string& str) {
-  v8::Isolate* isolate = context->GetIsolate();
+                                    const std::string& str,
+                                    v8::Isolate* isolate) {
+  if (isolate == nullptr) isolate = context->GetIsolate();
   if (UNLIKELY(str.size() >= static_cast<size_t>(v8::String::kMaxLength))) {
     // V8 only has a TODO comment about adding an exception when the maximum
     // string size is exceeded.
@@ -419,39 +394,76 @@ v8::MaybeLocal<v8::Value> ToV8Value(v8::Local<v8::Context> context,
 
 template <typename T>
 v8::MaybeLocal<v8::Value> ToV8Value(v8::Local<v8::Context> context,
-                                    const std::vector<T>& vec) {
-  v8::Isolate* isolate = context->GetIsolate();
+                                    const std::vector<T>& vec,
+                                    v8::Isolate* isolate) {
+  if (isolate == nullptr) isolate = context->GetIsolate();
   v8::EscapableHandleScope handle_scope(isolate);
 
-  v8::Local<v8::Array> arr = v8::Array::New(isolate, vec.size());
+  MaybeStackBuffer<v8::Local<v8::Value>, 128> arr(vec.size());
+  arr.SetLength(vec.size());
   for (size_t i = 0; i < vec.size(); ++i) {
-    v8::Local<v8::Value> val;
-    if (!ToV8Value(context, vec[i]).ToLocal(&val) ||
-        arr->Set(context, i, val).IsNothing()) {
+    if (!ToV8Value(context, vec[i], isolate).ToLocal(&arr[i]))
       return v8::MaybeLocal<v8::Value>();
-    }
   }
 
-  return handle_scope.Escape(arr);
+  return handle_scope.Escape(v8::Array::New(isolate, arr.out(), arr.length()));
 }
 
 template <typename T, typename U>
 v8::MaybeLocal<v8::Value> ToV8Value(v8::Local<v8::Context> context,
-                                    const std::unordered_map<T, U>& map) {
-  v8::Isolate* isolate = context->GetIsolate();
+                                    const std::unordered_map<T, U>& map,
+                                    v8::Isolate* isolate) {
+  if (isolate == nullptr) isolate = context->GetIsolate();
   v8::EscapableHandleScope handle_scope(isolate);
 
   v8::Local<v8::Map> ret = v8::Map::New(isolate);
   for (const auto& item : map) {
     v8::Local<v8::Value> first, second;
-    if (!ToV8Value(context, item.first).ToLocal(&first) ||
-        !ToV8Value(context, item.second).ToLocal(&second) ||
+    if (!ToV8Value(context, item.first, isolate).ToLocal(&first) ||
+        !ToV8Value(context, item.second, isolate).ToLocal(&second) ||
         ret->Set(context, first, second).IsEmpty()) {
       return v8::MaybeLocal<v8::Value>();
     }
   }
 
   return handle_scope.Escape(ret);
+}
+
+template <typename T, typename >
+v8::MaybeLocal<v8::Value> ToV8Value(v8::Local<v8::Context> context,
+                                    const T& number,
+                                    v8::Isolate* isolate) {
+  if (isolate == nullptr) isolate = context->GetIsolate();
+
+  using Limits = std::numeric_limits<T>;
+  // Choose Uint32, Int32, or Double depending on range checks.
+  // These checks should all collapse at compile time.
+  if (static_cast<uint32_t>(Limits::max()) <=
+          std::numeric_limits<uint32_t>::max() &&
+      static_cast<uint32_t>(Limits::min()) >=
+          std::numeric_limits<uint32_t>::min() && Limits::is_exact) {
+    return v8::Integer::NewFromUnsigned(isolate, static_cast<uint32_t>(number));
+  }
+
+  if (static_cast<int32_t>(Limits::max()) <=
+          std::numeric_limits<int32_t>::max() &&
+      static_cast<int32_t>(Limits::min()) >=
+          std::numeric_limits<int32_t>::min() && Limits::is_exact) {
+    return v8::Integer::New(isolate, static_cast<int32_t>(number));
+  }
+
+  return v8::Number::New(isolate, static_cast<double>(number));
+}
+
+SlicedArguments::SlicedArguments(
+    const v8::FunctionCallbackInfo<v8::Value>& args, size_t start) {
+  const size_t length = static_cast<size_t>(args.Length());
+  if (start >= length) return;
+  const size_t size = length - start;
+
+  AllocateSufficientStorage(size);
+  for (size_t i = 0; i < size; ++i)
+    (*this)[i] = args[i + start];
 }
 
 }  // namespace node

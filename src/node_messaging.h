@@ -43,10 +43,13 @@ class Message : public MemoryRetainer {
 
   // Internal method of Message that is called when a new SharedArrayBuffer
   // object is encountered in the incoming value's structure.
-  void AddSharedArrayBuffer(SharedArrayBufferMetadataReference ref);
+  void AddSharedArrayBuffer(const SharedArrayBufferMetadataReference& ref);
   // Internal method of Message that is called once serialization finishes
   // and that transfers ownership of `data` to this message.
   void AddMessagePort(std::unique_ptr<MessagePortData>&& data);
+  // Internal method of Message that is called when a new WebAssembly.Module
+  // object is encountered in the incoming value's structure.
+  uint32_t AddWASMModule(v8::WasmCompiledModule::TransferrableModule&& mod);
 
   // The MessagePorts that will be transferred, as recorded by Serialize().
   // Used for warning user about posting the target MessagePort to itself,
@@ -57,13 +60,15 @@ class Message : public MemoryRetainer {
 
   void MemoryInfo(MemoryTracker* tracker) const override;
 
-  ADD_MEMORY_INFO_NAME(Message)
+  SET_MEMORY_INFO_NAME(Message)
+  SET_SELF_SIZE(Message)
 
  private:
   MallocedBuffer<char> main_message_buf_;
   std::vector<MallocedBuffer<char>> array_buffer_contents_;
   std::vector<SharedArrayBufferMetadataReference> shared_array_buffers_;
   std::vector<std::unique_ptr<MessagePortData>> message_ports_;
+  std::vector<v8::WasmCompiledModule::TransferrableModule> wasm_modules_;
 
   friend class MessagePort;
 };
@@ -73,7 +78,7 @@ class Message : public MemoryRetainer {
 class MessagePortData : public MemoryRetainer {
  public:
   explicit MessagePortData(MessagePort* owner);
-  ~MessagePortData();
+  ~MessagePortData() override;
 
   MessagePortData(MessagePortData&& other) = delete;
   MessagePortData& operator=(MessagePortData&& other) = delete;
@@ -100,7 +105,8 @@ class MessagePortData : public MemoryRetainer {
 
   void MemoryInfo(MemoryTracker* tracker) const override;
 
-  ADD_MEMORY_INFO_NAME(MessagePortData)
+  SET_MEMORY_INFO_NAME(MessagePortData)
+  SET_SELF_SIZE(MessagePortData)
 
  private:
   // After disentangling this message port, the owner handle (if any)
@@ -132,7 +138,7 @@ class MessagePort : public HandleWrap {
   MessagePort(Environment* env,
               v8::Local<v8::Context> context,
               v8::Local<v8::Object> wrap);
-  ~MessagePort();
+  ~MessagePort() override;
 
   // Create a new message port instance, optionally over an existing
   // `MessagePortData` object.
@@ -187,11 +193,11 @@ class MessagePort : public HandleWrap {
   inline bool IsDetached() const;
 
   void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
     tracker->TrackField("data", data_);
   }
 
-  ADD_MEMORY_INFO_NAME(MessagePort)
+  SET_MEMORY_INFO_NAME(MessagePort)
+  SET_SELF_SIZE(MessagePort)
 
  private:
   void OnClose() override;

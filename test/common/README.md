@@ -13,6 +13,7 @@ This directory contains modules used to test the Node.js implementation.
 * [Heap dump checker module](#heap-dump-checker-module)
 * [HTTP2 module](#http2-module)
 * [Internet module](#internet-module)
+* [tick module](#tick-module)
 * [tmpdir module](#tmpdir-module)
 * [WPT module](#wpt-module)
 
@@ -52,10 +53,9 @@ symlinks
 ([SeCreateSymbolicLinkPrivilege](https://msdn.microsoft.com/en-us/library/windows/desktop/bb530716(v=vs.85).aspx)).
 On non-Windows platforms, this always returns `true`.
 
-### ddCommand(filename, kilobytes)
-* return [&lt;Object>]
+### createZeroFilledFile(filename)
 
-Platform normalizes the `dd` command
+Creates a 10 MB file of all null characters.
 
 ### disableCrashOnUnhandledRejection()
 
@@ -109,14 +109,51 @@ Indicates if there is more than 1gb of total memory.
   returned function has not been called exactly `exact` number of times when the
   test is complete, then the test will fail.
 
-### expectWarning(name, expected, code)
-* `name` [&lt;string>]
-* `expected` [&lt;string>] | [&lt;Array>]
+### expectWarning(name[, expected[, code]])
+* `name` [&lt;string>] | [&lt;Object>]
+* `expected` [&lt;string>] | [&lt;Array>] | [&lt;Object>]
 * `code` [&lt;string>]
 
-Tests whether `name`, `expected`, and `code` are part of a raised warning. If
-an expected warning does not have a code then `common.noWarnCode` can be used
-to indicate this.
+Tests whether `name`, `expected`, and `code` are part of a raised warning.
+
+The code is required in case the name is set to `'DeprecationWarning'`.
+
+Examples:
+
+```js
+const { expectWarning } = require('../common');
+
+expectWarning('Warning', 'Foobar is really bad');
+
+expectWarning('DeprecationWarning', 'Foobar is deprecated', 'DEP0XXX');
+
+expectWarning('DeprecationWarning', [
+  'Foobar is deprecated', 'DEP0XXX'
+]);
+
+expectWarning('DeprecationWarning', [
+  ['Foobar is deprecated', 'DEP0XXX'],
+  ['Baz is also deprecated', 'DEP0XX2']
+]);
+
+expectWarning('DeprecationWarning', {
+  DEP0XXX: 'Foobar is deprecated',
+  DEP0XX2: 'Baz is also deprecated'
+});
+
+expectWarning({
+  DeprecationWarning: {
+    DEP0XXX: 'Foobar is deprecated',
+    DEP0XX1: 'Baz is also deprecated'
+  },
+  Warning: [
+    ['Multiple array entries are fine', 'SpecialWarningCode'],
+    ['No code is also fine']
+  ],
+  SingleEntry: ['This will also work', 'WarningCode'],
+  SingleString: 'Single string entries without code will also work'
+});
+```
 
 ### getArrayBufferViews(buf)
 * `buf` [&lt;Buffer>]
@@ -214,11 +251,6 @@ Platform check for SunOS.
 
 Platform check for Windows.
 
-### isWOW64
-* [&lt;boolean>]
-
-Platform check for Windows 32-bit on Windows 64-bit.
-
 ### localhostIPv4
 * [&lt;string>]
 
@@ -239,17 +271,6 @@ exactly `exact` number of times when the test is complete, then the test will
 fail.
 
 If `fn` is not provided, an empty function will be used.
-
-### mustCallAsync([fn][, exact])
-* `fn` [&lt;Function>]
-* `exact` [&lt;number>] default = 1
-* return [&lt;Function>]
-
-The same as `mustCall()`, except that it is also checked that the Promise
-returned by the function is fulfilled for each invocation of the function.
-
-The return value of the wrapped function is the return value of the original
-function, if necessary wrapped as a promise.
 
 ### mustCallAtLeast([fn][, minimum])
 * `fn` [&lt;Function>] default = () => {}
@@ -278,19 +299,18 @@ Returns `true` if the exit code `exitCode` and/or signal name `signal` represent
 the exit code and/or signal name of a node process that aborted, `false`
 otherwise.
 
-### noWarnCode
-See `common.expectWarning()` for usage.
-
 ### opensslCli
 * [&lt;boolean>]
 
 Indicates whether 'opensslCli' is supported.
 
 ### platformTimeout(ms)
-* `ms` [&lt;number>]
-* return [&lt;number>]
+* `ms` [&lt;number>] | [&lt;bigint>]
+* return [&lt;number>] | [&lt;bigint>]
 
-Platform normalizes timeout.
+Returns a timeout value based on detected conditions. For example, a debug build
+may need extra time so the returned value will be larger than on a release
+build.
 
 ### PIPE
 * [&lt;string>]
@@ -761,6 +781,16 @@ a full `setImmediate()` invocation passes.
 should not be in scope when `listener.ongc()` is created.
 
 
+## tick Module
+
+The `tick` module provides a helper function that can be used to call a callback
+after a given number of event loop "ticks".
+
+### tick(x, cb)
+
+* `x` [&lt;number>] Number of event loop "ticks".
+* `cb` [&lt;Function>] A callback function.
+
 ## tmpdir Module
 
 The `tmpdir` module supports the use of a temporary directory for testing.
@@ -776,12 +806,19 @@ Deletes and recreates the testing temporary directory.
 
 ## WPT Module
 
-The wpt.js module is a port of parts of
-[W3C testharness.js](https://github.com/w3c/testharness.js) for testing the
-Node.js
-[WHATWG URL API](https://nodejs.org/api/url.html#url_the_whatwg_url_api)
-implementation with tests from
-[W3C Web Platform Tests](https://github.com/w3c/web-platform-tests).
+### harness
+
+A legacy port of [Web Platform Tests][] harness.
+
+See the source code for definitions. Please avoid using it in new
+code - the current usage of this port in tests is being migrated to
+the original WPT harness, see [the WPT tests README][].
+
+### Class: WPTRunner
+
+A driver class for running WPT with the WPT harness in a vm.
+
+See [the WPT tests README][] for details.
 
 
 [&lt;Array>]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array
@@ -790,9 +827,12 @@ implementation with tests from
 [&lt;Function>]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function
 [&lt;Object>]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object
 [&lt;RegExp>]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp
+[&lt;bigint>]: https://github.com/tc39/proposal-bigint
 [&lt;boolean>]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#Boolean_type
 [&lt;number>]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#Number_type
 [&lt;string>]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#String_type
+[Web Platform Tests]: https://github.com/web-platform-tests/wpt
 [`hijackstdio.hijackStdErr()`]: #hijackstderrlistener
 [`hijackstdio.hijackStdOut()`]: #hijackstdoutlistener
 [internationalization]: https://github.com/nodejs/node/wiki/Intl
+[the WPT tests README]: ../wpt/README.md

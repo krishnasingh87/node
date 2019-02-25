@@ -6,10 +6,8 @@ const path = require('path');
 // Create an object of all benchmark scripts
 const benchmarks = {};
 fs.readdirSync(__dirname)
-  .filter(function(name) {
-    return fs.statSync(path.resolve(__dirname, name)).isDirectory();
-  })
-  .forEach(function(category) {
+  .filter((name) => fs.statSync(path.resolve(__dirname, name)).isDirectory())
+  .forEach((category) => {
     benchmarks[category] = fs.readdirSync(path.resolve(__dirname, category))
       .filter((filename) => filename[0] !== '.' && filename[0] !== '_');
   });
@@ -49,7 +47,7 @@ function CLI(usage, settings) {
         this.optional[currentOptional] = true;
         mode = 'both';
       } else {
-        // expect the next value to be option related (either -- or the value)
+        // Expect the next value to be option related (either -- or the value)
         mode = 'option';
       }
     } else if (mode === 'option') {
@@ -72,7 +70,6 @@ function CLI(usage, settings) {
     } else {
       // Bad case, abort
       this.abort(usage);
-      return;
     }
   }
 }

@@ -260,7 +260,10 @@ not capture any frames.
 * {string}
 
 The `error.code` property is a string label that identifies the kind of error.
-See [Node.js Error Codes][] for details about specific codes.
+`error.code` is the most stable way to identify an error. It will only change
+between major versions of Node.js. In contrast, `error.message` strings may
+change between any versions of Node.js. See [Node.js Error Codes][] for details
+about specific codes.
 
 ### error.message
 
@@ -368,7 +371,7 @@ range, or outside the set of options for a given function parameter.
 
 ```js
 require('net').connect(-1);
-// throws "RangeError: "port" option should be >= 0 and < 65536: -1"
+// Throws "RangeError: "port" option should be >= 0 and < 65536: -1"
 ```
 
 Node.js will generate and throw `RangeError` instances *immediately* as a form
@@ -385,7 +388,7 @@ will do so.
 
 ```js
 doesNotExist;
-// throws ReferenceError, doesNotExist is not a variable in this program.
+// Throws ReferenceError, doesNotExist is not a variable in this program.
 ```
 
 Unless an application is dynamically generating and running code,
@@ -441,53 +444,83 @@ checks or `abort()` calls in the C++ layer.
 
 ## System Errors
 
-System errors are generated when exceptions occur within the Node.js
-runtime environment. Typically, these are operational errors that occur
-when an application violates an operating system constraint such as attempting
-to read a file that does not exist or when the user does not have sufficient
-permissions.
+Node.js generates system errors when exceptions occur within its runtime
+environment. These usually occur when an application violates an operating
+system constraint. For example, a system error will occur if an application
+attempts to read a file that does not exist.
 
-System errors are typically generated at the syscall level: an exhaustive list
-of error codes and their meanings is available by running `man 2 intro` or
-`man 3 errno` on most Unices; or [online][].
+System errors are usually generated at the syscall level. For a comprehensive
+list, see the [`errno`(3) man page][].
 
-In Node.js, system errors are represented as augmented `Error` objects with
-added properties.
+In Node.js, system errors are `Error` objects with extra properties.
 
 ### Class: SystemError
 
-#### error.info
-
-`SystemError` instances may have an additional `info` property whose
-value is an object with additional details about the error conditions.
-
-The following properties are provided:
-
+* `address` {string} If present, the address to which a network connection
+  failed
 * `code` {string} The string error code
-* `errno` {number} The system-provided error number
-* `message` {string} A system-provided human readable description of the error
+* `dest` {string} If present, the file path destination when reporting a file
+  system error
+* `errno` {number|string} The system-provided error number
+* `info` {Object} If present, extra details about the error condition
+* `message` {string} A system-provided human-readable description of the error
+* `path` {string} If present, the file path when reporting a file system error
+* `port` {number} If present, the network connection port that is not available
 * `syscall` {string} The name of the system call that triggered the error
-* `path` {Buffer} When reporting a file system error, the `path` will identify
-  the file path.
-* `dest` {Buffer} When reporting a file system error, the `dest` will identify
-  the file path destination (if any).
+
+#### error.address
+
+* {string}
+
+If present, `error.address` is a string describing the address to which a
+network connection failed.
 
 #### error.code
 
 * {string}
 
-The `error.code` property is a string representing the error code, which is
-typically `E` followed by a sequence of capital letters.
+The `error.code` property is a string representing the error code.
+
+#### error.dest
+
+* {string}
+
+If present, `error.dest` is the file path destination when reporting a file
+system error.
 
 #### error.errno
 
 * {string|number}
 
-The `error.errno` property is a number or a string.
-The number is a **negative** value which corresponds to the error code defined
-in [`libuv Error handling`]. See `uv-errno.h` header file
-(`deps/uv/include/uv-errno.h` in the Node.js source tree) for details. In case
+The `error.errno` property is a number or a string. If it is a number, it is a
+negative value which corresponds to the error code defined in
+[`libuv Error handling`]. See the libuv `errno.h` header file
+(`deps/uv/include/uv/errno.h` in the Node.js source tree) for details. In case
 of a string, it is the same as `error.code`.
+
+#### error.info
+
+* {Object}
+
+If present, `error.info` is an object with details about the error condition.
+
+#### error.message
+
+* {string}
+
+`error.message` is a system-provided human-readable description of the error.
+
+#### error.path
+
+* {string}
+
+If present, `error.path` is a string containing a relevant invalid pathname.
+
+#### error.port
+
+* {number}
+
+If present, `error.port` is the network connection port that is not available.
 
 #### error.syscall
 
@@ -495,32 +528,10 @@ of a string, it is the same as `error.code`.
 
 The `error.syscall` property is a string describing the [syscall][] that failed.
 
-#### error.path
-
-* {string}
-
-When present (e.g. in `fs` or `child_process`), the `error.path` property is a
-string containing a relevant invalid pathname.
-
-#### error.address
-
-* {string}
-
-When present (e.g. in `net` or `dgram`), the `error.address` property is a
-string describing the address to which the connection failed.
-
-#### error.port
-
-* {number}
-
-When present (e.g. in `net` or `dgram`), the `error.port` property is a number
-representing the connection's port that is not available.
-
 ### Common System Errors
 
-This list is **not exhaustive**, but enumerates many of the common system
-errors encountered when writing a Node.js program. An exhaustive list may be
-found [here][online].
+This is a list of system errors commonly-encountered when writing a Node.js
+program. For a comprehensive list, see the [`errno`(3) man page][].
 
 - `EACCES` (Permission denied): An attempt was made to access a file in a way
   forbidden by its file access permissions.
@@ -612,6 +623,29 @@ An attempt was made to register something that is not a function as an
 
 The type of an asynchronous resource was invalid. Note that users are also able
 to define their own types if using the public embedder API.
+
+<a id="ERR_BROTLI_COMPRESSION_FAILED"></a>
+### ERR_BROTLI_COMPRESSION_FAILED
+
+Data passed to a Brotli stream was not successfully compressed.
+
+<a id="ERR_BROTLI_INVALID_PARAM"></a>
+### ERR_BROTLI_INVALID_PARAM
+
+An invalid parameter key was passed during construction of a Brotli stream.
+
+<a id="ERR_BUFFER_CONTEXT_NOT_AVAILABLE"></a>
+### ERR_BUFFER_CONTEXT_NOT_AVAILABLE
+
+An attempt was made to create a Node.js `Buffer` instance from addon or embedder
+code, while in a JS engine Context that is not associated with a Node.js
+instance. The data passed to the `Buffer` method will have been released
+by the time the method returns.
+
+When encountering this error, a possible alternative to creating a `Buffer`
+instance is to create a normal `Uint8Array`, which only differs in the
+prototype of the resulting object. `Uint8Array`s are generally accepted in all
+Node.js core APIs where `Buffer`s are; they are available in all Contexts.
 
 <a id="ERR_BUFFER_OUT_OF_BOUNDS"></a>
 ### ERR_BUFFER_OUT_OF_BOUNDS
@@ -738,6 +772,11 @@ The selected public or private key encoding is incompatible with other options.
 ### ERR_CRYPTO_INVALID_DIGEST
 
 An invalid [crypto digest algorithm][] was specified.
+
+<a id="ERR_CRYPTO_INVALID_KEY_OBJECT_TYPE"></a>
+### ERR_CRYPTO_INVALID_KEY_OBJECT_TYPE
+
+The given crypto key object's type is invalid for the attempted operation.
 
 <a id="ERR_CRYPTO_INVALID_STATE"></a>
 ### ERR_CRYPTO_INVALID_STATE
@@ -1102,6 +1141,12 @@ is set for the `Http2Stream`.
 `http2.connect()` was passed a URL that uses any protocol other than `http:` or
 `https:`.
 
+<a id="ERR_INCOMPATIBLE_OPTION_PAIR"></a>
+### ERR_INCOMPATIBLE_OPTION_PAIR
+
+An option pair is incompatible with each other and can not be used at the same
+time.
+
 <a id="ERR_INSPECTOR_ALREADY_CONNECTED"></a>
 ### ERR_INSPECTOR_ALREADY_CONNECTED
 
@@ -1335,6 +1380,39 @@ An attempt was made to open an IPC communication channel with a synchronously
 forked Node.js process. See the documentation for the [`child_process`][] module
 for more information.
 
+<a id="ERR_MANIFEST_ASSERT_INTEGRITY"></a>
+### ERR_MANIFEST_ASSERT_INTEGRITY
+
+An attempt was made to load a resource, but the resource did not match the
+integrity defined by the policy manifest. See the documentation for [policy]
+manifests for more information.
+
+<a id="ERR_MANIFEST_INTEGRITY_MISMATCH"></a>
+### ERR_MANIFEST_INTEGRITY_MISMATCH
+
+An attempt was made to load a policy manifest, but the manifest had multiple
+entries for a resource which did not match each other. Update the manifest
+entries to match in order to resolve this error. See the documentation for
+[policy] manifests for more information.
+
+<a id="ERR_MANIFEST_PARSE_POLICY"></a>
+### ERR_MANIFEST_PARSE_POLICY
+
+An attempt was made to load a policy manifest, but the manifest was unable to
+be parsed. See the documentation for [policy] manifests for more information.
+
+<a id="ERR_MANIFEST_TDZ"></a>
+### ERR_MANIFEST_TDZ
+
+An attempt was made to read from a policy manifest, but the manifest
+initialization has not yet taken place. This is likely a bug in Node.js.
+
+<a id="ERR_MANIFEST_UNKNOWN_ONERROR"></a>
+### ERR_MANIFEST_UNKNOWN_ONERROR
+
+A policy manifest was loaded, but had an unknown value for its "onerror"
+behavior. See the documentation for [policy] manifests for more information.
+
 <a id="ERR_MEMORY_ALLOCATION_FAILED"></a>
 ### ERR_MEMORY_ALLOCATION_FAILED
 
@@ -1545,17 +1623,12 @@ An attempt was made to operate on an already closed socket.
 
 A call was made and the UDP subsystem was not running.
 
-<a id="ERR_STDERR_CLOSE"></a>
-### ERR_STDERR_CLOSE
+<a id="ERR_SRI_PARSE"></a>
+### ERR_SRI_PARSE
 
-An attempt was made to close the `process.stderr` stream. By design, Node.js
-does not allow `stdout` or `stderr` streams to be closed by user code.
-
-<a id="ERR_STDOUT_CLOSE"></a>
-### ERR_STDOUT_CLOSE
-
-An attempt was made to close the `process.stdout` stream. By design, Node.js
-does not allow `stdout` or `stderr` streams to be closed by user code.
+A string was provided for a Subresource Integrity check, but was unable to be
+parsed. Check the format of integrity attributes by looking at the
+[Subresource Integrity specification][].
 
 <a id="ERR_STREAM_CANNOT_PIPE"></a>
 ### ERR_STREAM_CANNOT_PIPE
@@ -1616,6 +1689,12 @@ called.
 An attempt has been made to create a string longer than the maximum allowed
 length.
 
+<a id="ERR_SYNTHETIC"></a>
+### ERR_SYNTHETIC
+
+An artificial error object used to capture the call stack for diagnostic
+reports.
+
 <a id="ERR_SYSTEM_ERROR"></a>
 ### ERR_SYSTEM_ERROR
 
@@ -1642,6 +1721,23 @@ recommended to use 2048 bits or larger for stronger security.
 
 A TLS/SSL handshake timed out. In this case, the server must also abort the
 connection.
+
+<a id="ERR_TLS_INVALID_PROTOCOL_METHOD"></a>
+### ERR_TLS_INVALID_PROTOCOL_METHOD
+
+The specified  `secureProtocol` method is invalid. It is  either unknown, or
+disabled because it is insecure.
+
+<a id="ERR_TLS_INVALID_PROTOCOL_VERSION"></a>
+### ERR_TLS_INVALID_PROTOCOL_VERSION
+
+Valid TLS protocol versions are `'TLSv1'`, `'TLSv1.1'`, or `'TLSv1.2'`.
+
+<a id="ERR_TLS_PROTOCOL_VERSION_CONFLICT"></a>
+### ERR_TLS_PROTOCOL_VERSION_CONFLICT
+
+Attempting to set a TLS protocol `minVersion` or `maxVersion` conflicts with an
+attempt to set the `secureProtocol` explicitly. Use one mechanism or the other.
 
 <a id="ERR_TLS_RENEGOTIATE"></a>
 ### ERR_TLS_RENEGOTIATE
@@ -1708,12 +1804,6 @@ A `Transform` stream finished with data still in the write buffer.
 
 The initialization of a TTY failed due to a system error.
 
-<a id="ERR_TTY_WRITABLE_NOT_READABLE"></a>
-### ERR_TTY_WRITABLE_NOT_READABLE
-
-This `Error` is thrown when a read is attempted on a TTY `WriteStream`,
-such as `process.stdout.on('data')`.
-
 <a id="ERR_UNCAUGHT_EXCEPTION_CAPTURE_ALREADY_SET"></a>
 ### ERR_UNCAUGHT_EXCEPTION_CAPTURE_ALREADY_SET
 
@@ -1772,20 +1862,6 @@ An attempt was made to load a module with an unknown or unsupported format.
 An invalid or unknown process signal was passed to an API expecting a valid
 signal (such as [`subprocess.kill()`][]).
 
-<a id="ERR_UNKNOWN_STDIN_TYPE"></a>
-### ERR_UNKNOWN_STDIN_TYPE
-
-An attempt was made to launch a Node.js process with an unknown `stdin` file
-type. This error is usually an indication of a bug within Node.js itself,
-although it is possible for user code to trigger it.
-
-<a id="ERR_UNKNOWN_STREAM_TYPE"></a>
-### ERR_UNKNOWN_STREAM_TYPE
-
-An attempt was made to launch a Node.js process with an unknown `stdout` or
-`stderr` file type. This error is usually an indication of a bug within Node.js
-itself, although it is possible for user code to trigger it.
-
 <a id="ERR_V8BREAKITERATOR"></a>
 ### ERR_V8BREAKITERATOR
 
@@ -1796,6 +1872,11 @@ The V8 `BreakIterator` API was used but the full ICU data set is not installed.
 
 While using the Performance Timing API (`perf_hooks`), no valid performance
 entry types were found.
+
+<a id="ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING"></a>
+### ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING
+
+A dynamic import callback was not specified.
 
 <a id="ERR_VM_MODULE_ALREADY_LINKED"></a>
 ### ERR_VM_MODULE_ALREADY_LINKED
@@ -1834,6 +1915,12 @@ The fulfilled value of a linking promise is not a `vm.SourceTextModule` object.
 The current module's status does not allow for this operation. The specific
 meaning of the error depends on the specific function.
 
+<a id="ERR_WORKER_INVALID_EXEC_ARGV"></a>
+### ERR_WORKER_INVALID_EXEC_ARGV
+
+The `execArgv` option passed to the `Worker` constructor contains
+invalid flags.
+
 <a id="ERR_WORKER_PATH"></a>
 ### ERR_WORKER_PATH
 
@@ -1851,14 +1938,38 @@ All attempts at serializing an uncaught exception from a worker thread failed.
 The pathname used for the main script of a worker has an
 unknown file extension.
 
+<a id="ERR_WORKER_UNSUPPORTED_OPERATION"></a>
+### ERR_WORKER_UNSUPPORTED_OPERATION
+
+The requested functionality is not supported in worker threads.
+
 <a id="ERR_ZLIB_INITIALIZATION_FAILED"></a>
 ### ERR_ZLIB_INITIALIZATION_FAILED
 
 Creation of a [`zlib`][] object failed due to incorrect configuration.
 
+<a id="HPE_HEADER_OVERFLOW"></a>
+### HPE_HEADER_OVERFLOW
+<!-- YAML
+changes:
+  - version: v11.4.0
+    pr-url: https://github.com/nodejs/node/commit/186035243fad247e3955f
+    description: Max header size in `http_parser` was set to 8KB.
+-->
+
+Too much HTTP header data was received. In order to protect against malicious or
+malconfigured clients, if more than 8KB of HTTP header data is received then
+HTTP parsing will abort without a request or response object being created, and
+an `Error` with this code will be emitted.
+
 <a id="MODULE_NOT_FOUND"></a>
 ### MODULE_NOT_FOUND
-
+<!-- YAML
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/25690
+    description: Added `requireStack` property.
+-->
 A module file could not be resolved while attempting a [`require()`][] or
 `import` operation.
 
@@ -1929,7 +2040,7 @@ Used when an invalid character is found in an HTTP response status message
 ### ERR_INDEX_OUT_OF_RANGE
 <!-- YAML
   added: v10.0.0
-  removed: REPLACEME
+  removed: v11.0.0
 -->
 A given index was out of the accepted range (e.g. negative offsets).
 
@@ -1961,6 +2072,37 @@ removed: v10.0.0
 
 The `repl` module was unable to parse data from the REPL history file.
 
+
+<a id="ERR_STDERR_CLOSE"></a>
+### ERR_STDERR_CLOSE
+<!-- YAML
+removed: v10.12.0
+changes:
+  - version: v10.12.0
+    pr-url: https://github.com/nodejs/node/pull/23053
+    description: Rather than emitting an error, `process.stderr.end()` now
+                 only closes the stream side but not the underlying resource,
+                 making this error obsolete.
+-->
+
+An attempt was made to close the `process.stderr` stream. By design, Node.js
+does not allow `stdout` or `stderr` streams to be closed by user code.
+
+<a id="ERR_STDOUT_CLOSE"></a>
+### ERR_STDOUT_CLOSE
+<!-- YAML
+removed: v10.12.0
+changes:
+  - version: v10.12.0
+    pr-url: https://github.com/nodejs/node/pull/23053
+    description: Rather than emitting an error, `process.stderr.end()` now
+                 only closes the stream side but not the underlying resource,
+                 making this error obsolete.
+-->
+
+An attempt was made to close the `process.stdout` stream. By design, Node.js
+does not allow `stdout` or `stderr` streams to be closed by user code.
+
 <a id="ERR_STREAM_READ_NOT_IMPLEMENTED"></a>
 ### ERR_STREAM_READ_NOT_IMPLEMENTED
 <!-- YAML
@@ -1991,6 +2133,28 @@ The `'ERR_UNKNOWN_BUILTIN_MODULE'` error code is used to identify a specific
 kind of internal Node.js error that should not typically be triggered by user
 code. Instances of this error point to an internal bug within the Node.js
 binary itself.
+
+<a id="ERR_UNKNOWN_STDIN_TYPE"></a>
+### ERR_UNKNOWN_STDIN_TYPE
+<!-- YAML
+added: v8.0.0
+removed: v11.7.0
+-->
+
+An attempt was made to launch a Node.js process with an unknown `stdin` file
+type. This error is usually an indication of a bug within Node.js itself,
+although it is possible for user code to trigger it.
+
+<a id="ERR_UNKNOWN_STREAM_TYPE"></a>
+### ERR_UNKNOWN_STREAM_TYPE
+<!-- YAML
+added: v8.0.0
+removed: v11.7.0
+-->
+
+An attempt was made to launch a Node.js process with an unknown `stdout` or
+`stderr` file type. This error is usually an indication of a bug within Node.js
+itself, although it is possible for user code to trigger it.
 
 <a id="ERR_VALUE_OUT_OF_RANGE"></a>
 ### ERR_VALUE_OUT_OF_RANGE
@@ -2068,23 +2232,32 @@ instance.setEncoding('utf8');
 An attempt has been made to create a string larger than the maximum allowed
 size.
 
-[`--force-fips`]: cli.html#cli_force_fips
+<a id="ERR_TTY_WRITABLE_NOT_READABLE"></a>
+#### ERR_TTY_WRITABLE_NOT_READABLE
+
+This `Error` is thrown when a read is attempted on a TTY `WriteStream`,
+such as `process.stdout.on('data')`.
+
+
 [`'uncaughtException'`]: process.html#process_event_uncaughtexception
+[`--force-fips`]: cli.html#cli_force_fips
+[`Class: assert.AssertionError`]: assert.html#assert_class_assert_assertionerror
+[`ERR_INVALID_ARG_TYPE`]: #ERR_INVALID_ARG_TYPE
+[`EventEmitter`]: events.html#events_class_eventemitter
+[`Writable`]: stream.html#stream_class_stream_writable
 [`child_process`]: child_process.html
 [`cipher.getAuthTag()`]: crypto.html#crypto_cipher_getauthtag
-[`Class: assert.AssertionError`]: assert.html#assert_class_assert_assertionerror
 [`crypto.scrypt()`]: crypto.html#crypto_crypto_scrypt_password_salt_keylen_options_callback
 [`crypto.scryptSync()`]: crypto.html#crypto_crypto_scryptsync_password_salt_keylen_options
 [`crypto.timingSafeEqual()`]: crypto.html#crypto_crypto_timingsafeequal_a_b
 [`dgram.createSocket()`]: dgram.html#dgram_dgram_createsocket_options_callback
-[`ERR_INVALID_ARG_TYPE`]: #ERR_INVALID_ARG_TYPE
-[`EventEmitter`]: events.html#events_class_eventemitter
-[`fs`]: fs.html
-[`fs.readdir`]: fs.html#fs_fs_readdir_path_options_callback
+[`errno`(3) man page]: http://man7.org/linux/man-pages/man3/errno.3.html
 [`fs.readFileSync`]: fs.html#fs_fs_readfilesync_path_options
+[`fs.readdir`]: fs.html#fs_fs_readdir_path_options_callback
 [`fs.symlink()`]: fs.html#fs_fs_symlink_target_path_type_callback
 [`fs.symlinkSync()`]: fs.html#fs_fs_symlinksync_target_path_type
 [`fs.unlink`]: fs.html#fs_fs_unlink_path_callback
+[`fs`]: fs.html
 [`hash.digest()`]: crypto.html#crypto_hash_digest_encoding
 [`hash.update()`]: crypto.html#crypto_hash_update_data_inputencoding
 [`http`]: http.html
@@ -2096,31 +2269,31 @@ size.
 [`process.send()`]: process.html#process_process_send_message_sendhandle_options_callback
 [`process.setUncaughtExceptionCaptureCallback()`]: process.html#process_process_setuncaughtexceptioncapturecallback_fn
 [`readable._read()`]: stream.html#stream_readable_read_size_1
-[`require()`]: modules.html#modules_require
 [`require('crypto').setEngine()`]: crypto.html#crypto_crypto_setengine_engine_flags
-[`server.listen()`]: net.html#net_server_listen
+[`require()`]: modules.html#modules_require_id
 [`server.close()`]: net.html#net_server_close_callback
-[`sign.sign()`]: crypto.html#crypto_sign_sign_privatekey_outputformat
+[`server.listen()`]: net.html#net_server_listen
+[`sign.sign()`]: crypto.html#crypto_sign_sign_privatekey_outputencoding
 [`stream.pipe()`]: stream.html#stream_readable_pipe_destination_options
 [`stream.push()`]: stream.html#stream_readable_push_chunk_encoding
 [`stream.unshift()`]: stream.html#stream_readable_unshift_chunk
 [`stream.write()`]: stream.html#stream_writable_write_chunk_encoding_callback
 [`subprocess.kill()`]: child_process.html#child_process_subprocess_kill_signal
 [`subprocess.send()`]: child_process.html#child_process_subprocess_send_message_sendhandle_options_callback
-[`Writable`]: stream.html#stream_class_stream_writable
 [`zlib`]: zlib.html
 [ES6 module]: esm.html
+[ICU]: intl.html#intl_internationalization_support
 [Node.js Error Codes]: #nodejs-error-codes
 [V8's stack trace API]: https://github.com/v8/v8/wiki/Stack-Trace-API
+[WHATWG Supported Encodings]: util.html#util_whatwg_supported_encodings
 [WHATWG URL API]: url.html#url_the_whatwg_url_api
 [crypto digest algorithm]: crypto.html#crypto_crypto_gethashes
 [domains]: domain.html
 [event emitter-based]: events.html#events_class_eventemitter
 [file descriptors]: https://en.wikipedia.org/wiki/File_descriptor
-[ICU]: intl.html#intl_internationalization_support
-[online]: http://man7.org/linux/man-pages/man3/errno.3.html
+[policy]: policy.html
 [stream-based]: stream.html
 [syscall]: http://man7.org/linux/man-pages/man2/syscalls.2.html
+[Subresource Integrity specification]: https://www.w3.org/TR/SRI/#the-integrity-attribute
 [try-catch]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/try...catch
 [vm]: vm.html
-[WHATWG Supported Encodings]: util.html#util_whatwg_supported_encodings

@@ -834,7 +834,7 @@ Maybe<bool> ValueSerializer::WriteJSArrayBuffer(
     ThrowDataCloneError(MessageTemplate::kDataCloneErrorNeuteredArrayBuffer);
     return Nothing<bool>();
   }
-  double byte_length = array_buffer->byte_length()->Number();
+  double byte_length = array_buffer->byte_length();
   if (byte_length > std::numeric_limits<uint32_t>::max()) {
     ThrowDataCloneError(MessageTemplate::kDataCloneError, array_buffer);
     return Nothing<bool>();
@@ -865,8 +865,8 @@ Maybe<bool> ValueSerializer::WriteJSArrayBufferView(JSArrayBufferView* view) {
     tag = ArrayBufferViewTag::kDataView;
   }
   WriteVarint(static_cast<uint8_t>(tag));
-  WriteVarint(NumberToUint32(view->byte_offset()));
-  WriteVarint(NumberToUint32(view->byte_length()));
+  WriteVarint(static_cast<uint32_t>(view->byte_offset()));
+  WriteVarint(static_cast<uint32_t>(view->byte_length()));
   return ThrowIfOutOfMemory();
 }
 
@@ -1147,6 +1147,7 @@ void ValueDeserializer::TransferArrayBuffer(
 }
 
 MaybeHandle<Object> ValueDeserializer::ReadObject() {
+  DisallowJavascriptExecution no_js(isolate_);
   MaybeHandle<Object> result = ReadObjectInternal();
 
   // ArrayBufferView is special in that it consumes the value before it, even
@@ -1273,7 +1274,6 @@ MaybeHandle<String> ValueDeserializer::ReadString() {
 }
 
 MaybeHandle<BigInt> ValueDeserializer::ReadBigInt() {
-  if (!FLAG_harmony_bigint) return MaybeHandle<BigInt>();
   uint32_t bitfield;
   if (!ReadVarint<uint32_t>().To(&bitfield)) return MaybeHandle<BigInt>();
   int bytelength = BigInt::DigitsByteLengthForBitfield(bitfield);
@@ -1471,6 +1471,11 @@ MaybeHandle<JSArray> ValueDeserializer::ReadDenseJSArray() {
     // hole. Past version 11, undefined means undefined.
     if (version_ < 11 && element->IsUndefined(isolate_)) continue;
 
+    // Make sure elements is still large enough.
+    if (i >= static_cast<uint32_t>(elements->length())) {
+      return MaybeHandle<JSArray>();
+    }
+
     elements->set(i, *element);
   }
 
@@ -1592,8 +1597,12 @@ MaybeHandle<JSMap> ValueDeserializer::ReadJSMap() {
     }
 
     Handle<Object> argv[2];
-    if (!ReadObject().ToHandle(&argv[0]) || !ReadObject().ToHandle(&argv[1]) ||
-        Execution::Call(isolate_, map_set, map, arraysize(argv), argv)
+    if (!ReadObject().ToHandle(&argv[0]) || !ReadObject().ToHandle(&argv[1])) {
+      return MaybeHandle<JSMap>();
+    }
+
+    AllowJavascriptExecution allow_js(isolate_);
+    if (Execution::Call(isolate_, map_set, map, arraysize(argv), argv)
             .is_null()) {
       return MaybeHandle<JSMap>();
     }
@@ -1628,8 +1637,10 @@ MaybeHandle<JSSet> ValueDeserializer::ReadJSSet() {
     }
 
     Handle<Object> argv[1];
-    if (!ReadObject().ToHandle(&argv[0]) ||
-        Execution::Call(isolate_, set_add, set, arraysize(argv), argv)
+    if (!ReadObject().ToHandle(&argv[0])) return MaybeHandle<JSSet>();
+
+    AllowJavascriptExecution allow_js(isolate_);
+    if (Execution::Call(isolate_, set_add, set, arraysize(argv), argv)
             .is_null()) {
       return MaybeHandle<JSSet>();
     }
@@ -1702,7 +1713,7 @@ MaybeHandle<JSArrayBuffer> ValueDeserializer::ReadTransferredJSArrayBuffer() {
 
 MaybeHandle<JSArrayBufferView> ValueDeserializer::ReadJSArrayBufferView(
     Handle<JSArrayBuffer> buffer) {
-  uint32_t buffer_byte_length = NumberToUint32(buffer->byte_length());
+  uint32_t buffer_byte_length = static_cast<uint32_t>(buffer->byte_length());
   uint8_t tag = 0;
   uint32_t byte_offset = 0;
   uint32_t byte_length = 0;
@@ -1716,15 +1727,6 @@ MaybeHandle<JSArrayBufferView> ValueDeserializer::ReadJSArrayBufferView(
   uint32_t id = next_id_++;
   ExternalArrayType external_array_type = kExternalInt8Array;
   unsigned element_size = 0;
-
-  if (!FLAG_harmony_bigint) {
-    // Refuse to construct BigInt64Arrays unless the flag is on.
-    ArrayBufferViewTag cast_tag = static_cast<ArrayBufferViewTag>(tag);
-    if (cast_tag == ArrayBufferViewTag::kBigInt64Array ||
-        cast_tag == ArrayBufferViewTag::kBigUint64Array) {
-      return MaybeHandle<JSArrayBufferView>();
-    }
-  }
 
   switch (static_cast<ArrayBufferViewTag>(tag)) {
     case ArrayBufferViewTag::kDataView: {
@@ -1982,6 +1984,7 @@ Maybe<uint32_t> ValueDeserializer::ReadJSObjectProperties(
       bool success;
       LookupIterator it = LookupIterator::PropertyOrElement(
           isolate_, object, key, &success, LookupIterator::OWN);
+      CHECK_EQ(LookupIterator::NOT_FOUND, it.state());
       if (!success ||
           JSObject::DefineOwnPropertyIgnoreAttributes(&it, value, NONE)
               .is_null()) {
@@ -2016,6 +2019,7 @@ Maybe<uint32_t> ValueDeserializer::ReadJSObjectProperties(
     bool success;
     LookupIterator it = LookupIterator::PropertyOrElement(
         isolate_, object, key, &success, LookupIterator::OWN);
+    CHECK_EQ(LookupIterator::NOT_FOUND, it.state());
     if (!success ||
         JSObject::DefineOwnPropertyIgnoreAttributes(&it, value, NONE)
             .is_null()) {
@@ -2063,6 +2067,7 @@ static Maybe<bool> SetPropertiesFromKeyValuePairs(Isolate* isolate,
     bool success;
     LookupIterator it = LookupIterator::PropertyOrElement(
         isolate, object, key, &success, LookupIterator::OWN);
+    CHECK_EQ(LookupIterator::NOT_FOUND, it.state());
     if (!success ||
         JSObject::DefineOwnPropertyIgnoreAttributes(&it, value, NONE)
             .is_null()) {

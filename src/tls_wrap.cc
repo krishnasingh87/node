@@ -26,7 +26,6 @@
 #include "node_crypto_bio.h"  // NodeBIO
 // ClientHelloParser
 #include "node_crypto_clienthello-inl.h"
-#include "node_internals.h"
 #include "stream_base-inl.h"
 #include "util-inl.h"
 
@@ -41,6 +40,7 @@ using v8::Exception;
 using v8::Function;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
+using v8::Isolate;
 using v8::Local;
 using v8::Object;
 using v8::ReadOnly;
@@ -49,22 +49,14 @@ using v8::String;
 using v8::Value;
 
 TLSWrap::TLSWrap(Environment* env,
+                 Local<Object> obj,
                  Kind kind,
                  StreamBase* stream,
                  SecureContext* sc)
-    : AsyncWrap(env,
-                env->tls_wrap_constructor_function()
-                    ->NewInstance(env->context()).ToLocalChecked(),
-                AsyncWrap::PROVIDER_TLSWRAP),
+    : AsyncWrap(env, obj, AsyncWrap::PROVIDER_TLSWRAP),
       SSLWrap<TLSWrap>(env, sc, kind),
       StreamBase(env),
-      sc_(sc),
-      write_size_(0),
-      started_(false),
-      established_(false),
-      shutdown_(false),
-      cycle_depth_(0),
-      eof_(false) {
+      sc_(sc) {
   MakeWeak();
 
   // sc comes from an Unwrap. Make sure it was assigned.
@@ -117,11 +109,15 @@ void TLSWrap::InitSSL() {
   SSL_set_verify(ssl_.get(), SSL_VERIFY_NONE, crypto::VerifyCallback);
 
 #ifdef SSL_MODE_RELEASE_BUFFERS
-  long mode = SSL_get_mode(ssl_.get());  // NOLINT(runtime/int)
-  SSL_set_mode(ssl_.get(), mode | SSL_MODE_RELEASE_BUFFERS);
+  SSL_set_mode(ssl_.get(), SSL_MODE_RELEASE_BUFFERS);
 #endif  // SSL_MODE_RELEASE_BUFFERS
 
   SSL_set_app_data(ssl_.get(), this);
+  // Using InfoCallback isn't how we are supposed to check handshake progress:
+  //   https://github.com/openssl/openssl/issues/7199#issuecomment-420915993
+  //
+  // Note on when this gets called on various openssl versions:
+  //   https://github.com/openssl/openssl/issues/7199#issuecomment-420670544
   SSL_set_info_callback(ssl_.get(), SSLInfoCallback);
 
   if (is_server()) {
@@ -162,7 +158,14 @@ void TLSWrap::Wrap(const FunctionCallbackInfo<Value>& args) {
   StreamBase* stream = static_cast<StreamBase*>(stream_obj->Value());
   CHECK_NOT_NULL(stream);
 
-  TLSWrap* res = new TLSWrap(env, kind, stream, Unwrap<SecureContext>(sc));
+  Local<Object> obj;
+  if (!env->tls_wrap_constructor_function()
+           ->NewInstance(env->context())
+           .ToLocal(&obj)) {
+    return;
+  }
+
+  TLSWrap* res = new TLSWrap(env, obj, kind, stream, Unwrap<SecureContext>(sc));
 
   args.GetReturnValue().Set(res->object());
 }
@@ -200,6 +203,9 @@ void TLSWrap::Start(const FunctionCallbackInfo<Value>& args) {
 
   // Send ClientHello handshake
   CHECK(wrap->is_client());
+  // Seems odd to read when when we want to send, but SSL_read() triggers a
+  // handshake if a session isn't established, and handshake will cause
+  // encrypted data to become available for output.
   wrap->ClearOut();
   wrap->EncOut();
 }
@@ -209,27 +215,34 @@ void TLSWrap::SSLInfoCallback(const SSL* ssl_, int where, int ret) {
   if (!(where & (SSL_CB_HANDSHAKE_START | SSL_CB_HANDSHAKE_DONE)))
     return;
 
-  // Be compatible with older versions of OpenSSL. SSL_get_app_data() wants
-  // a non-const SSL* in OpenSSL <= 0.9.7e.
+  // SSL_renegotiate_pending() should take `const SSL*`, but it does not.
   SSL* ssl = const_cast<SSL*>(ssl_);
-  TLSWrap* c = static_cast<TLSWrap*>(SSL_get_app_data(ssl));
+  TLSWrap* c = static_cast<TLSWrap*>(SSL_get_app_data(ssl_));
   Environment* env = c->env();
   HandleScope handle_scope(env->isolate());
   Context::Scope context_scope(env->context());
   Local<Object> object = c->object();
 
   if (where & SSL_CB_HANDSHAKE_START) {
-    Local<Value> callback = object->Get(env->onhandshakestart_string());
-    if (callback->IsFunction()) {
+    Local<Value> callback;
+
+    if (object->Get(env->context(), env->onhandshakestart_string())
+          .ToLocal(&callback) && callback->IsFunction()) {
       Local<Value> argv[] = { env->GetNow() };
       c->MakeCallback(callback.As<Function>(), arraysize(argv), argv);
     }
   }
 
-  if (where & SSL_CB_HANDSHAKE_DONE) {
+  // SSL_CB_HANDSHAKE_START and SSL_CB_HANDSHAKE_DONE are called
+  // sending HelloRequest in OpenSSL-1.1.1.
+  // We need to check whether this is in a renegotiation state or not.
+  if (where & SSL_CB_HANDSHAKE_DONE && !SSL_renegotiate_pending(ssl)) {
+    Local<Value> callback;
+
     c->established_ = true;
-    Local<Value> callback = object->Get(env->onhandshakedone_string());
-    if (callback->IsFunction()) {
+
+    if (object->Get(env->context(), env->onhandshakedone_string())
+          .ToLocal(&callback) && callback->IsFunction()) {
       c->MakeCallback(callback.As<Function>(), 0, nullptr);
     }
   }
@@ -246,7 +259,7 @@ void TLSWrap::EncOut() {
     return;
 
   // Wait for `newSession` callback to be invoked
-  if (is_waiting_new_session())
+  if (is_awaiting_new_session())
     return;
 
   // Split-off queue
@@ -256,7 +269,7 @@ void TLSWrap::EncOut() {
   if (ssl_ == nullptr)
     return;
 
-  // No data to write
+  // No encrypted output ready to write to the underlying stream.
   if (BIO_pending(enc_out_) == 0) {
     if (pending_cleartext_input_.empty())
       InvokeQueued(0);
@@ -340,23 +353,58 @@ Local<Value> TLSWrap::GetSSLError(int status, int* err, std::string* msg) {
     case SSL_ERROR_WANT_READ:
     case SSL_ERROR_WANT_WRITE:
     case SSL_ERROR_WANT_X509_LOOKUP:
-      break;
+      return Local<Value>();
+
     case SSL_ERROR_ZERO_RETURN:
       return scope.Escape(env()->zero_return_string());
-      break;
-    default:
-      {
-        CHECK(*err == SSL_ERROR_SSL || *err == SSL_ERROR_SYSCALL);
 
+    case SSL_ERROR_SSL:
+    case SSL_ERROR_SYSCALL:
+      {
+        unsigned long ssl_err = ERR_peek_error();  // NOLINT(runtime/int)
         BIO* bio = BIO_new(BIO_s_mem());
         ERR_print_errors(bio);
 
         BUF_MEM* mem;
         BIO_get_mem_ptr(bio, &mem);
 
+        Isolate* isolate = env()->isolate();
+        Local<Context> context = isolate->GetCurrentContext();
+
         Local<String> message =
-            OneByteString(env()->isolate(), mem->data, mem->length);
+            OneByteString(isolate, mem->data, mem->length);
         Local<Value> exception = Exception::Error(message);
+        Local<Object> obj = exception->ToObject(context).ToLocalChecked();
+
+        const char* ls = ERR_lib_error_string(ssl_err);
+        const char* fs = ERR_func_error_string(ssl_err);
+        const char* rs = ERR_reason_error_string(ssl_err);
+
+        if (ls != nullptr)
+          obj->Set(context, env()->library_string(),
+                   OneByteString(isolate, ls)).FromJust();
+        if (fs != nullptr)
+          obj->Set(context, env()->function_string(),
+                   OneByteString(isolate, fs)).FromJust();
+        if (rs != nullptr) {
+          obj->Set(context, env()->reason_string(),
+                   OneByteString(isolate, rs)).FromJust();
+
+          // SSL has no API to recover the error name from the number, so we
+          // transform reason strings like "this error" to "ERR_SSL_THIS_ERROR",
+          // which ends up being close to the original error macro name.
+          std::string code(rs);
+
+          for (auto& c : code) {
+            if (c == ' ')
+              c = '_';
+            else
+              c = ::toupper(c);
+          }
+          obj->Set(context, env()->code_string(),
+                   OneByteString(isolate, ("ERR_SSL_" + code).c_str()))
+                     .FromJust();
+        }
 
         if (msg != nullptr)
           msg->assign(mem->data, mem->data + mem->length);
@@ -365,8 +413,11 @@ Local<Value> TLSWrap::GetSSLError(int status, int* err, std::string* msg) {
 
         return scope.Escape(exception);
       }
+
+    default:
+      UNREACHABLE();
   }
-  return Local<Value>();
+  UNREACHABLE();
 }
 
 
@@ -443,13 +494,13 @@ void TLSWrap::ClearOut() {
 }
 
 
-bool TLSWrap::ClearIn() {
+void TLSWrap::ClearIn() {
   // Ignore cycling data if ClientHello wasn't yet parsed
   if (!hello_parser_.IsEnded())
-    return false;
+    return;
 
   if (ssl_ == nullptr)
-    return false;
+    return;
 
   std::vector<uv_buf_t> buffers;
   buffers.swap(pending_cleartext_input_);
@@ -469,8 +520,9 @@ bool TLSWrap::ClearIn() {
 
   // All written
   if (i == buffers.size()) {
+    // We wrote all the buffers, so no writes failed (written < 0 on failure).
     CHECK_GE(written, 0);
-    return true;
+    return;
   }
 
   // Error or partial write
@@ -482,6 +534,8 @@ bool TLSWrap::ClearIn() {
   Local<Value> arg = GetSSLError(written, &err, &error_str);
   if (!arg.IsEmpty()) {
     write_callback_scheduled_ = true;
+    // XXX(sam) Should forward an error object with .code/.function/.etc, if
+    // possible.
     InvokeQueued(UV_EPROTO, error_str.c_str());
   } else {
     // Push back the not-yet-written pending buffers into their queue.
@@ -492,7 +546,7 @@ bool TLSWrap::ClearIn() {
                                     buffers.end());
   }
 
-  return false;
+  return;
 }
 
 
@@ -548,6 +602,7 @@ void TLSWrap::ClearError() {
 }
 
 
+// Called by StreamBase::Write() to request async write of clear text into SSL.
 int TLSWrap::DoWrite(WriteWrap* w,
                      uv_buf_t* bufs,
                      size_t count,
@@ -561,18 +616,26 @@ int TLSWrap::DoWrite(WriteWrap* w,
   }
 
   bool empty = true;
-
-  // Empty writes should not go through encryption process
   size_t i;
-  for (i = 0; i < count; i++)
+  for (i = 0; i < count; i++) {
     if (bufs[i].len > 0) {
       empty = false;
       break;
     }
+  }
+
+  // We want to trigger a Write() on the underlying stream to drive the stream
+  // system, but don't want to encrypt empty buffers into a TLS frame, so see
+  // if we can find something to Write().
+  // First, call ClearOut(). It does an SSL_read(), which might cause handshake
+  // or other internal messages to be encrypted. If it does, write them later
+  // with EncOut().
+  // If there is still no encrypted output, call Write(bufs) on the underlying
+  // stream. Since the bufs are empty, it won't actually write non-TLS data
+  // onto the socket, we just want the side-effects. After, make sure the
+  // WriteWrap was accepted by the stream, or that we call Done() on it.
   if (empty) {
     ClearOut();
-    // However, if there is any data that should be written to the socket,
-    // the callback should not be invoked immediately
     if (BIO_pending(enc_out_) == 0) {
       CHECK_NULL(current_empty_write_);
       current_empty_write_ = w;
@@ -592,7 +655,7 @@ int TLSWrap::DoWrite(WriteWrap* w,
   CHECK_NULL(current_write_);
   current_write_ = w;
 
-  // Write queued data
+  // Write encrypted data to underlying stream and call Done().
   if (empty) {
     EncOut();
     return 0;
@@ -611,17 +674,20 @@ int TLSWrap::DoWrite(WriteWrap* w,
   if (i != count) {
     int err;
     Local<Value> arg = GetSSLError(written, &err, &error_);
+
+    // If we stopped writing because of an error, it's fatal, discard the data.
     if (!arg.IsEmpty()) {
       current_write_ = nullptr;
       return UV_EPROTO;
     }
 
+    // Otherwise, save unwritten data so it can be written later by ClearIn().
     pending_cleartext_input_.insert(pending_cleartext_input_.end(),
                                     &bufs[i],
                                     &bufs[count]);
   }
 
-  // Try writing data immediately
+  // Write any encrypted/handshake output that may be ready.
   EncOut();
 
   return 0;
@@ -653,17 +719,20 @@ void TLSWrap::OnStreamRead(ssize_t nread, const uv_buf_t& buf) {
     return;
   }
 
-  // Only client connections can receive data
   if (ssl_ == nullptr) {
     EmitRead(UV_EPROTO);
     return;
   }
 
-  // Commit read data
+  // Commit the amount of data actually read into the peeked/allocated buffer
+  // from the underlying stream.
   crypto::NodeBIO* enc_in = crypto::NodeBIO::FromBIO(enc_in_);
   enc_in->Commit(nread);
 
-  // Parse ClientHello first
+  // Parse ClientHello first, if we need to. It's only parsed if session event
+  // listeners are used on the server side.  "ended" is the initial state, so
+  // can mean parsing was never started, or that parsing is finished. Either
+  // way, ended means we can give the buffered data to SSL.
   if (!hello_parser_.IsEnded()) {
     size_t avail = 0;
     uint8_t* data = reinterpret_cast<uint8_t*>(enc_in->Peek(&avail));
@@ -706,7 +775,7 @@ void TLSWrap::SetVerifyMode(const FunctionCallbackInfo<Value>& args) {
   if (wrap->is_server()) {
     bool request_cert = args[0]->IsTrue();
     if (!request_cert) {
-      // Note reject_unauthorized ignored.
+      // If no cert is requested, there will be none to reject as unauthorized.
       verify_mode = SSL_VERIFY_NONE;
     } else {
       bool reject_unauthorized = args[1]->IsTrue();
@@ -715,7 +784,9 @@ void TLSWrap::SetVerifyMode(const FunctionCallbackInfo<Value>& args) {
         verify_mode |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
     }
   } else {
-    // Note request_cert and reject_unauthorized are ignored for clients.
+    // Servers always send a cert if the cipher is not anonymous (anon is
+    // disabled by default), so use VERIFY_NONE and check the cert after the
+    // handshake has completed.
     verify_mode = SSL_VERIFY_NONE;
   }
 
@@ -730,6 +801,11 @@ void TLSWrap::EnableSessionCallbacks(
   ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
   CHECK_NOT_NULL(wrap->ssl_);
   wrap->enable_session_callbacks();
+
+  // Clients don't use the HelloParser.
+  if (wrap->is_client())
+    return;
+
   crypto::NodeBIO::FromBIO(wrap->enc_in_)->set_initial(kMaxHelloLength);
   wrap->hello_parser_.Start(SSLWrap<TLSWrap>::OnClientHello,
                             OnClientHelloParseEnd,
@@ -820,7 +896,10 @@ int TLSWrap::SelectSNIContextCallback(SSL* s, int* ad, void* arg) {
 
   // Call the SNI callback and use its return value as context
   Local<Object> object = p->object();
-  Local<Value> ctx = object->Get(env->sni_context_string());
+  Local<Value> ctx;
+
+  if (!object->Get(env->context(), env->sni_context_string()).ToLocal(&ctx))
+    return SSL_TLSEXT_ERR_NOACK;
 
   // Not an object, probably undefined or null
   if (!ctx->IsObject())
@@ -858,7 +937,6 @@ void TLSWrap::GetWriteQueueSize(const FunctionCallbackInfo<Value>& info) {
 
 
 void TLSWrap::MemoryInfo(MemoryTracker* tracker) const {
-  tracker->TrackThis(this);
   tracker->TrackField("error", error_);
   tracker->TrackField("pending_cleartext_input", pending_cleartext_input_);
   if (enc_in_ != nullptr)
@@ -870,7 +948,8 @@ void TLSWrap::MemoryInfo(MemoryTracker* tracker) const {
 
 void TLSWrap::Initialize(Local<Object> target,
                          Local<Value> unused,
-                         Local<Context> context) {
+                         Local<Context> context,
+                         void* priv) {
   Environment* env = Environment::GetCurrent(context);
 
   env->SetMethod(target, "wrap", TLSWrap::Wrap);
@@ -891,7 +970,7 @@ void TLSWrap::Initialize(Local<Object> target,
       Local<FunctionTemplate>(),
       static_cast<PropertyAttribute>(ReadOnly | DontDelete));
 
-  AsyncWrap::AddWrapMethods(env, t, AsyncWrap::kFlagHasReset);
+  t->Inherit(AsyncWrap::GetConstructorTemplate(env));
   env->SetProtoMethod(t, "receive", Receive);
   env->SetProtoMethod(t, "start", Start);
   env->SetProtoMethod(t, "setVerifyMode", SetVerifyMode);
@@ -908,7 +987,9 @@ void TLSWrap::Initialize(Local<Object> target,
   env->set_tls_wrap_constructor_function(
       t->GetFunction(env->context()).ToLocalChecked());
 
-  target->Set(tlsWrapString, t->GetFunction(env->context()).ToLocalChecked());
+  target->Set(env->context(),
+              tlsWrapString,
+              t->GetFunction(env->context()).ToLocalChecked()).FromJust();
 }
 
 }  // namespace node

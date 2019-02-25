@@ -15,7 +15,7 @@ const Readable = require('stream').Readable;
   assert.strictEqual(state.readingMore, false);
 
   readable.on('data', common.mustCall((data) => {
-    // while in a flowing state with a 'readable' listener
+    // While in a flowing state with a 'readable' listener
     // we should not be reading more
     if (readable.readableFlowing)
       assert.strictEqual(state.readingMore, true);
@@ -33,7 +33,7 @@ const Readable = require('stream').Readable;
 
   const expectedReadingMore = [true, false];
   readable.on('readable', common.mustCall(() => {
-    // there is only one readingMore scheduled from on('data'),
+    // There is only one readingMore scheduled from on('data'),
     // after which everything is governed by the .read() call
     assert.strictEqual(state.readingMore, expectedReadingMore.shift());
 
@@ -73,7 +73,7 @@ const Readable = require('stream').Readable;
   assert.strictEqual(state.readingMore, false);
 
   readable.on('data', common.mustCall((data) => {
-    // while in a flowing state without a 'readable' listener
+    // While in a flowing state without a 'readable' listener
     // we should be reading more
     if (readable.readableFlowing)
       assert.strictEqual(state.readingMore, true);
@@ -143,10 +143,10 @@ const Readable = require('stream').Readable;
   readable.on('end', common.mustCall(onStreamEnd));
   readable.push('pushed');
 
-  // we are still not flowing, we will be resuming in the next tick
+  // We are still not flowing, we will be resuming in the next tick
   assert.strictEqual(state.flowing, false);
 
-  // wait for nextTick, so the readableListener flag resets
+  // Wait for nextTick, so the readableListener flag resets
   process.nextTick(function() {
     readable.resume();
 

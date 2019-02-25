@@ -25,15 +25,14 @@ const fixtures = require('../common/fixtures');
 if (!common.hasCrypto)
   common.skip('missing crypto');
 
-// disable strict server certificate validation by the client
+// Disable strict server certificate validation by the client
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 common.expectWarning(
   'Warning',
   'Setting the NODE_TLS_REJECT_UNAUTHORIZED environment variable to \'0\' ' +
   'makes TLS connections and HTTPS requests insecure by disabling ' +
-  'certificate verification.',
-  common.noWarnCode
+  'certificate verification.'
 );
 
 const assert = require('assert');

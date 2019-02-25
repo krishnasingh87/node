@@ -100,7 +100,7 @@ replProc.on('close', function(code) {
   assert.strictEqual(replStdout, output);
 });
 
-// test that preload placement at other points in the cmdline
+// Test that preload placement at other points in the cmdline
 // also test that duplicated preload only gets loaded once
 childProcess.exec(
   `"${nodeBinary}" ${preloadOption([fixtureA])}-e "console.log('hello');" ${
@@ -155,7 +155,7 @@ if (common.isWindows) {
 // https://github.com/nodejs/node/issues/1691
 process.chdir(fixtures.fixturesDir);
 childProcess.exec(
-  `"${nodeBinary}" --expose_natives_as=v8natives --require ` +
+  `"${nodeBinary}" --require ` +
      `"${fixtures.path('cluster-preload.js')}" cluster-preload-test.js`,
   function(err, stdout, stderr) {
     assert.ifError(err);

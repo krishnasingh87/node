@@ -27,8 +27,7 @@ if (!common.hasCrypto)
 
 common.expectWarning({
   DeprecationWarning: [
-    ['crypto.createCipher is deprecated.', 'DEP0106'],
-    ['crypto._toBuf is deprecated.', 'DEP0114']
+    ['crypto.createCipher is deprecated.', 'DEP0106']
   ]
 });
 
@@ -38,19 +37,19 @@ const tls = require('tls');
 const fixtures = require('../common/fixtures');
 
 // Test Certificates
-const caPem = fixtures.readSync('test_ca.pem', 'ascii');
-const certPem = fixtures.readSync('test_cert.pem', 'ascii');
 const certPfx = fixtures.readSync('test_cert.pfx');
-const keyPem = fixtures.readSync('test_key.pem', 'ascii');
 
 // 'this' safety
 // https://github.com/joyent/node/issues/6690
 assert.throws(function() {
-  const options = { key: keyPem, cert: certPem, ca: caPem };
-  const credentials = tls.createSecureContext(options);
+  const credentials = tls.createSecureContext();
   const context = credentials.context;
-  const notcontext = { setOptions: context.setOptions, setKey: context.setKey };
-  tls.createSecureContext({ secureOptions: 1 }, notcontext);
+  const notcontext = { setOptions: context.setOptions };
+
+  // Methods of native objects should not segfault when reassigned to a new
+  // object and called illegally. This core dumped in 0.10 and was fixed in
+  // 0.11.
+  notcontext.setOptions();
 }, (err) => {
   // Throws TypeError, so there is no opensslErrorStack property.
   if ((err instanceof Error) &&
@@ -235,7 +234,7 @@ assert.throws(function() {
   //   Then open private_key.pem and change its header and footer.
   const sha1_privateKey = fixtures.readSync('test_bad_rsa_privkey.pem',
                                             'ascii');
-  // this would inject errors onto OpenSSL's error stack
+  // This would inject errors onto OpenSSL's error stack
   crypto.createSign('sha1').sign(sha1_privateKey);
 }, (err) => {
   // Throws crypto error, so there is an opensslErrorStack property.
@@ -301,8 +300,3 @@ testEncoding({
 testEncoding({
   defaultEncoding: 'latin1'
 }, assertionHashLatin1);
-
-{
-  // Test that the exported _toBuf function is deprecated.
-  crypto._toBuf(Buffer.alloc(0));
-}

@@ -3,7 +3,7 @@
 const assert = require('assert');
 require('../common');
 
-// assert legit flags are allowed, and bogus flags are disallowed
+// Assert legit flags are allowed, and bogus flags are disallowed
 {
   const goodFlags = [
     '--perf_basic_prof',
@@ -16,7 +16,7 @@ require('../common');
     'r',
     '--stack-trace-limit=100',
     '--stack-trace-limit=-=xX_nodejs_Xx=-',
-  ].concat(process.config.variables.v8_enable_inspector ? [
+  ].concat(process.features.inspector ? [
     '--inspect-brk',
     'inspect-brk',
     '--inspect_brk',
@@ -51,11 +51,12 @@ require('../common');
 // assert all "canonical" flags begin with dash(es)
 {
   process.allowedNodeEnvironmentFlags.forEach((flag) => {
-    assert(/^--?[a-z8_-]+$/.test(flag), `Unexpected format for flag ${flag}`);
+    assert(/^--?[a-z0-9._-]+$/.test(flag),
+           `Unexpected format for flag ${flag}`);
   });
 }
 
-// assert immutability of process.allowedNodeEnvironmentFlags
+// Assert immutability of process.allowedNodeEnvironmentFlags
 {
   assert.strictEqual(Object.isFrozen(process.allowedNodeEnvironmentFlags),
                      true);

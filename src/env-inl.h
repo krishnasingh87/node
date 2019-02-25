@@ -37,6 +37,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <utility>
+
 namespace node {
 
 inline v8::Isolate* IsolateData::isolate() const {
@@ -47,8 +49,16 @@ inline uv_loop_t* IsolateData::event_loop() const {
   return event_loop_;
 }
 
-inline uint32_t* IsolateData::zero_fill_field() const {
-  return zero_fill_field_;
+inline bool IsolateData::uses_node_allocator() const {
+  return uses_node_allocator_;
+}
+
+inline v8::ArrayBuffer::Allocator* IsolateData::allocator() const {
+  return allocator_;
+}
+
+inline ArrayBufferAllocator* IsolateData::node_allocator() const {
+  return node_allocator_;
 }
 
 inline MultiIsolatePlatform* IsolateData::platform() const {
@@ -186,20 +196,20 @@ inline void Environment::AsyncHooks::clear_async_id_stack() {
 inline Environment::AsyncHooks::DefaultTriggerAsyncIdScope
   ::DefaultTriggerAsyncIdScope(Environment* env,
                                double default_trigger_async_id)
-    : async_id_fields_ref_(env->async_hooks()->async_id_fields()) {
+    : async_hooks_(env->async_hooks()) {
   if (env->async_hooks()->fields()[AsyncHooks::kCheck] > 0) {
     CHECK_GE(default_trigger_async_id, 0);
   }
 
   old_default_trigger_async_id_ =
-    async_id_fields_ref_[AsyncHooks::kDefaultTriggerAsyncId];
-  async_id_fields_ref_[AsyncHooks::kDefaultTriggerAsyncId] =
+    async_hooks_->async_id_fields()[AsyncHooks::kDefaultTriggerAsyncId];
+  async_hooks_->async_id_fields()[AsyncHooks::kDefaultTriggerAsyncId] =
     default_trigger_async_id;
 }
 
 inline Environment::AsyncHooks::DefaultTriggerAsyncIdScope
   ::~DefaultTriggerAsyncIdScope() {
-  async_id_fields_ref_[AsyncHooks::kDefaultTriggerAsyncId] =
+  async_hooks_->async_id_fields()[AsyncHooks::kDefaultTriggerAsyncId] =
     old_default_trigger_async_id_;
 }
 
@@ -265,16 +275,12 @@ inline AliasedBuffer<uint8_t, v8::Uint8Array>& Environment::TickInfo::fields() {
   return fields_;
 }
 
-inline bool Environment::TickInfo::has_scheduled() const {
-  return fields_[kHasScheduled] == 1;
+inline bool Environment::TickInfo::has_tick_scheduled() const {
+  return fields_[kHasTickScheduled] == 1;
 }
 
-inline bool Environment::TickInfo::has_promise_rejections() const {
-  return fields_[kHasPromiseRejections] == 1;
-}
-
-inline void Environment::TickInfo::promise_rejections_toggle_on() {
-  fields_[kHasPromiseRejections] = 1;
+inline bool Environment::TickInfo::has_rejection_to_warn() const {
+  return fields_[kHasRejectionToWarn] == 1;
 }
 
 inline void Environment::AssignToContext(v8::Local<v8::Context> context,
@@ -332,10 +338,6 @@ inline bool Environment::profiler_idle_notifier_started() const {
 
 inline v8::Isolate* Environment::isolate() const {
   return isolate_;
-}
-
-inline tracing::AgentWriterHandle* Environment::tracing_agent_writer() const {
-  return tracing_agent_writer_;
 }
 
 inline Environment* Environment::from_timer_handle(uv_timer_t* handle) {
@@ -400,6 +402,26 @@ inline uv_loop_t* Environment::event_loop() const {
   return isolate_data()->event_loop();
 }
 
+inline void Environment::TryLoadAddon(
+    const char* filename,
+    int flags,
+    const std::function<bool(binding::DLib*)>& was_loaded) {
+  loaded_addons_.emplace_back(filename, flags);
+  if (!was_loaded(&loaded_addons_.back())) {
+    loaded_addons_.pop_back();
+  }
+}
+
+#if HAVE_INSPECTOR
+inline bool Environment::is_in_inspector_console_call() const {
+  return is_in_inspector_console_call_;
+}
+
+inline void Environment::set_is_in_inspector_console_call(bool value) {
+  is_in_inspector_console_call_ = value;
+}
+#endif
+
 inline Environment::AsyncHooks* Environment::async_hooks() {
   return &async_hooks_;
 }
@@ -441,9 +463,19 @@ Environment::should_abort_on_uncaught_toggle() {
   return should_abort_on_uncaught_toggle_;
 }
 
-inline AliasedBuffer<uint8_t, v8::Uint8Array>&
-Environment::trace_category_state() {
-  return trace_category_state_;
+inline AliasedBuffer<int32_t, v8::Int32Array>&
+Environment::stream_base_state() {
+  return stream_base_state_;
+}
+
+inline uint32_t Environment::get_next_module_id() {
+  return module_id_counter_++;
+}
+inline uint32_t Environment::get_next_script_id() {
+  return script_id_counter_++;
+}
+inline uint32_t Environment::get_next_function_id() {
+  return function_id_counter_++;
 }
 
 Environment::ShouldNotAbortOnUncaughtScope::ShouldNotAbortOnUncaughtScope(
@@ -541,20 +573,16 @@ inline void Environment::set_http2_state(
 }
 
 bool Environment::debug_enabled(DebugCategory category) const {
-#ifdef DEBUG
-  CHECK_GE(static_cast<int>(category), 0);
-  CHECK_LT(static_cast<int>(category),
+  DCHECK_GE(static_cast<int>(category), 0);
+  DCHECK_LT(static_cast<int>(category),
            static_cast<int>(DebugCategory::CATEGORY_COUNT));
-#endif
   return debug_enabled_[static_cast<int>(category)];
 }
 
 void Environment::set_debug_enabled(DebugCategory category, bool enabled) {
-#ifdef DEBUG
-  CHECK_GE(static_cast<int>(category), 0);
-  CHECK_LT(static_cast<int>(category),
+  DCHECK_GE(static_cast<int>(category), 0);
+  DCHECK_LT(static_cast<int>(category),
            static_cast<int>(DebugCategory::CATEGORY_COUNT));
-#endif
   debug_enabled_[static_cast<int>(category)] = enabled;
 }
 
@@ -577,8 +605,17 @@ inline std::shared_ptr<EnvironmentOptions> Environment::options() {
   return options_;
 }
 
+inline std::shared_ptr<HostPort> Environment::inspector_host_port() {
+  return inspector_host_port_;
+}
+
 inline std::shared_ptr<PerIsolateOptions> IsolateData::options() {
   return options_;
+}
+
+inline void IsolateData::set_options(
+    std::shared_ptr<PerIsolateOptions> options) {
+  options_ = std::move(options);
 }
 
 void Environment::CreateImmediate(native_immediate_callback cb,
@@ -619,16 +656,28 @@ inline void Environment::set_can_call_into_js(bool can_call_into_js) {
   can_call_into_js_ = can_call_into_js;
 }
 
+inline bool Environment::has_run_bootstrapping_code() const {
+  return has_run_bootstrapping_code_;
+}
+
+inline void Environment::set_has_run_bootstrapping_code(bool value) {
+  has_run_bootstrapping_code_ = value;
+}
+
 inline bool Environment::is_main_thread() const {
-  return thread_id_ == 0;
+  return flags_ & kIsMainThread;
+}
+
+inline bool Environment::owns_process_state() const {
+  return flags_ & kOwnsProcessState;
+}
+
+inline bool Environment::owns_inspector() const {
+  return flags_ & kOwnsInspector;
 }
 
 inline uint64_t Environment::thread_id() const {
   return thread_id_;
-}
-
-inline void Environment::set_thread_id(uint64_t id) {
-  thread_id_ = id;
 }
 
 inline worker::Worker* Environment::worker_context() const {
@@ -636,7 +685,7 @@ inline worker::Worker* Environment::worker_context() const {
 }
 
 inline void Environment::set_worker_context(worker::Worker* context) {
-  CHECK_EQ(worker_context_, nullptr);  // Should be set only once.
+  CHECK_NULL(worker_context_);  // Should be set only once.
   worker_context_ = context;
 }
 
@@ -664,6 +713,104 @@ inline std::unordered_map<std::string, uint64_t>*
 
 inline IsolateData* Environment::isolate_data() const {
   return isolate_data_;
+}
+
+inline char* Environment::AllocateUnchecked(size_t size) {
+  return static_cast<char*>(
+      isolate_data()->allocator()->AllocateUninitialized(size));
+}
+
+inline char* Environment::Allocate(size_t size) {
+  char* ret = AllocateUnchecked(size);
+  CHECK_NE(ret, nullptr);
+  return ret;
+}
+
+inline void Environment::Free(char* data, size_t size) {
+  if (data != nullptr)
+    isolate_data()->allocator()->Free(data, size);
+}
+
+inline AllocatedBuffer Environment::AllocateManaged(size_t size, bool checked) {
+  char* data = checked ? Allocate(size) : AllocateUnchecked(size);
+  if (data == nullptr) size = 0;
+  return AllocatedBuffer(this, uv_buf_init(data, size));
+}
+
+inline AllocatedBuffer::AllocatedBuffer(Environment* env, uv_buf_t buf)
+    : env_(env), buffer_(buf) {}
+
+inline void AllocatedBuffer::Resize(size_t len) {
+  char* new_data = env_->Reallocate(buffer_.base, buffer_.len, len);
+  CHECK_IMPLIES(len > 0, new_data != nullptr);
+  buffer_ = uv_buf_init(new_data, len);
+}
+
+inline uv_buf_t AllocatedBuffer::release() {
+  uv_buf_t ret = buffer_;
+  buffer_ = uv_buf_init(nullptr, 0);
+  return ret;
+}
+
+inline char* AllocatedBuffer::data() {
+  return buffer_.base;
+}
+
+inline const char* AllocatedBuffer::data() const {
+  return buffer_.base;
+}
+
+inline size_t AllocatedBuffer::size() const {
+  return buffer_.len;
+}
+
+inline AllocatedBuffer::AllocatedBuffer(Environment* env)
+    : env_(env), buffer_(uv_buf_init(nullptr, 0)) {}
+
+inline AllocatedBuffer::AllocatedBuffer(AllocatedBuffer&& other)
+    : AllocatedBuffer() {
+  *this = std::move(other);
+}
+
+inline AllocatedBuffer& AllocatedBuffer::operator=(AllocatedBuffer&& other) {
+  clear();
+  env_ = other.env_;
+  buffer_ = other.release();
+  return *this;
+}
+
+inline AllocatedBuffer::~AllocatedBuffer() {
+  clear();
+}
+
+inline void AllocatedBuffer::clear() {
+  uv_buf_t buf = release();
+  env_->Free(buf.base, buf.len);
+}
+
+// It's a bit awkward to define this Buffer::New() overload here, but it
+// avoids a circular dependency with node_internals.h.
+namespace Buffer {
+v8::MaybeLocal<v8::Object> New(Environment* env,
+                               char* data,
+                               size_t length,
+                               bool uses_malloc);
+}
+
+inline v8::MaybeLocal<v8::Object> AllocatedBuffer::ToBuffer() {
+  CHECK_NOT_NULL(env_);
+  v8::MaybeLocal<v8::Object> obj = Buffer::New(env_, data(), size(), false);
+  if (!obj.IsEmpty()) release();
+  return obj;
+}
+
+inline v8::Local<v8::ArrayBuffer> AllocatedBuffer::ToArrayBuffer() {
+  CHECK_NOT_NULL(env_);
+  uv_buf_t buf = release();
+  return v8::ArrayBuffer::New(env_->isolate(),
+                              buf.base,
+                              buf.len,
+                              v8::ArrayBufferCreationMode::kInternalized);
 }
 
 inline void Environment::ThrowError(const char* errmsg) {
@@ -728,7 +875,7 @@ inline void Environment::SetMethod(v8::Local<v8::Object> that,
   const v8::NewStringType type = v8::NewStringType::kInternalized;
   v8::Local<v8::String> name_string =
       v8::String::NewFromUtf8(isolate(), name, type).ToLocalChecked();
-  that->Set(name_string, function);
+  that->Set(context, name_string, function).FromJust();
   function->SetName(name_string);  // NODE_SET_METHOD() compatibility.
 }
 
@@ -748,7 +895,7 @@ inline void Environment::SetMethodNoSideEffect(v8::Local<v8::Object> that,
   const v8::NewStringType type = v8::NewStringType::kInternalized;
   v8::Local<v8::String> name_string =
       v8::String::NewFromUtf8(isolate(), name, type).ToLocalChecked();
-  that->Set(name_string, function);
+  that->Set(context, name_string, function).FromJust();
   function->SetName(name_string);  // NODE_SET_METHOD() compatibility.
 }
 
@@ -887,7 +1034,7 @@ void Environment::ForEachBaseObject(T&& iterator) {
 
 #define V(PropertyName, TypeName)                                             \
   inline v8::Local<TypeName> Environment::PropertyName() const {              \
-    return StrongPersistentToLocal(PropertyName ## _);                        \
+    return PersistentToLocal::Strong(PropertyName ## _);                      \
   }                                                                           \
   inline void Environment::set_ ## PropertyName(v8::Local<TypeName> value) {  \
     PropertyName ## _.Reset(isolate(), value);                                \

@@ -16,7 +16,7 @@ static std::string cb_1_arg;  // NOLINT(runtime/string)
 
 class EnvironmentTest : public EnvironmentTestFixture {
  private:
-  virtual void TearDown() {
+  void TearDown() override {
     NodeTestFixture::TearDown();
     called_cb_1 = false;
     called_cb_2 = false;
@@ -80,13 +80,16 @@ TEST_F(EnvironmentTest, NonNodeJSContext) {
   node::Environment* env = *test_env;
   EXPECT_EQ(node::Environment::GetCurrent(isolate_), env);
   EXPECT_EQ(node::Environment::GetCurrent(env->context()), env);
+  EXPECT_EQ(node::GetCurrentEnvironment(env->context()), env);
 
   v8::Local<v8::Context> context = v8::Context::New(isolate_);
   EXPECT_EQ(node::Environment::GetCurrent(context), nullptr);
+  EXPECT_EQ(node::GetCurrentEnvironment(context), nullptr);
   EXPECT_EQ(node::Environment::GetCurrent(isolate_), env);
 
   v8::Context::Scope context_scope(context);
   EXPECT_EQ(node::Environment::GetCurrent(context), nullptr);
+  EXPECT_EQ(node::GetCurrentEnvironment(context), nullptr);
   EXPECT_EQ(node::Environment::GetCurrent(isolate_), nullptr);
 }
 

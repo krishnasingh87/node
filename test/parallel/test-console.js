@@ -42,10 +42,14 @@ if (common.isMainThread) {
 common.expectWarning(
   'Warning',
   [
-    ['Count for \'noLabel\' does not exist', common.noWarnCode],
-    ['No such label \'noLabel\' for console.timeLog()', common.noWarnCode],
-    ['No such label \'noLabel\' for console.timeEnd()', common.noWarnCode],
-    ['Label \'test\' already exists for console.time()', common.noWarnCode]
+    ['Count for \'noLabel\' does not exist'],
+    ['No such label \'noLabel\' for console.timeLog()'],
+    ['No such label \'noLabel\' for console.timeEnd()'],
+    ['Count for \'default\' does not exist'],
+    ['No such label \'default\' for console.timeLog()'],
+    ['No such label \'default\' for console.timeEnd()'],
+    ['Label \'default\' already exists for console.time()'],
+    ['Label \'test\' already exists for console.time()']
   ]
 );
 
@@ -55,6 +59,17 @@ console.timeEnd('noLabel');
 
 console.time('label');
 console.timeEnd('label');
+
+// Test using the default label
+// on console.time(), console.countReset(), console.timeLog(), console.timeEnd()
+console.countReset();
+console.timeLog();
+console.timeEnd();
+
+console.time();
+console.time();
+console.timeLog();
+console.timeEnd();
 
 // Check that the `Error` is a `TypeError` but do not check the message as it
 // will be different in different JavaScript engines.
@@ -134,7 +149,7 @@ console.trace('This is a %j %d', { formatted: 'trace' }, 10, 'foo');
 console.time('label');
 console.timeEnd('label');
 
-// verify that Object.prototype properties can be used as labels
+// Verify that Object.prototype properties can be used as labels
 console.time('__proto__');
 console.timeEnd('__proto__');
 console.time('constructor');
@@ -159,7 +174,7 @@ console.timeEnd();
 console.time(NaN);
 console.timeEnd(NaN);
 
-// make sure calling time twice without timeEnd doesn't reset the timer.
+// Make sure calling time twice without timeEnd doesn't reset the timer.
 console.time('test');
 const time = console._times.get('test');
 setTimeout(() => {
@@ -180,12 +195,14 @@ assert.strictEqual(errStrings[errStrings.length - 1],
 
 console.assert(true, 'this should not throw');
 
+console.assert(true);
+
 assert.strictEqual(strings.length, process.stdout.writeTimes);
 assert.strictEqual(errStrings.length, process.stderr.writeTimes);
 restoreStdout();
 restoreStderr();
 
-// verify that console.timeEnd() doesn't leave dead links
+// Verify that console.timeEnd() doesn't leave dead links
 const timesMapSize = console._times.size;
 console.time('label1');
 console.time('label2');
@@ -231,7 +248,7 @@ assert.ok(/^__proto__: \d+\.\d{3}ms$/.test(strings.shift().trim()));
 assert.ok(/^constructor: \d+\.\d{3}ms$/.test(strings.shift().trim()));
 assert.ok(/^hasOwnProperty: \d+\.\d{3}ms$/.test(strings.shift().trim()));
 
-// verify that console.time() coerces label values to strings as expected
+// Verify that console.time() coerces label values to strings as expected
 assert.ok(/^: \d+\.\d{3}ms$/.test(strings.shift().trim()));
 assert.ok(/^\[object Object\]: \d+\.\d{3}ms$/.test(strings.shift().trim()));
 assert.ok(/^\[object Object\]: \d+\.\d{3}ms$/.test(strings.shift().trim()));
@@ -251,7 +268,7 @@ assert.strictEqual(strings.length, 0);
 assert.strictEqual(errStrings.shift().split('\n').shift(),
                    'Trace: This is a {"formatted":"trace"} 10 foo');
 
-// hijack stderr to catch `process.emitWarning` which is using
+// Hijack stderr to catch `process.emitWarning` which is using
 // `process.nextTick`
 hijackStderr(common.mustCall(function(data) {
   restoreStderr();

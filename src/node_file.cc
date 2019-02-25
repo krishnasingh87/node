@@ -19,11 +19,13 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#include "node_file.h"
 #include "aliased_buffer.h"
 #include "node_buffer.h"
-#include "node_internals.h"
+#include "node_process.h"
 #include "node_stat_watcher.h"
-#include "node_file.h"
+#include "util.h"
+
 #include "tracing/trace_event.h"
 
 #include "req_wrap-inl.h"
@@ -72,18 +74,14 @@ using v8::Uint32;
 using v8::Undefined;
 using v8::Value;
 
-#ifndef MIN
-# define MIN(a, b) ((a) < (b) ? (a) : (b))
-#endif
-
 #ifndef S_ISDIR
 # define S_ISDIR(mode)  (((mode) & S_IFMT) == S_IFDIR)
 #endif
 
 #ifdef __POSIX__
-const char* kPathSeparator = "/";
+constexpr char kPathSeparator = '/';
 #else
-const char* kPathSeparator = "\\/";
+const char* const kPathSeparator = "\\/";
 #endif
 
 #define GET_OFFSET(a) ((a)->IsNumber() ? (a).As<Integer>()->Value() : -1)
@@ -108,20 +106,29 @@ typedef void(*uv_fs_callback_t)(uv_fs_t*);
 // The FileHandle object wraps a file descriptor and will close it on garbage
 // collection if necessary. If that happens, a process warning will be
 // emitted (or a fatal exception will occur if the fd cannot be closed.)
-FileHandle::FileHandle(Environment* env, int fd, Local<Object> obj)
-    : AsyncWrap(env,
-                obj.IsEmpty() ? env->fd_constructor_template()
-                    ->NewInstance(env->context()).ToLocalChecked() : obj,
-                AsyncWrap::PROVIDER_FILEHANDLE),
+FileHandle::FileHandle(Environment* env, Local<Object> obj, int fd)
+    : AsyncWrap(env, obj, AsyncWrap::PROVIDER_FILEHANDLE),
       StreamBase(env),
       fd_(fd) {
   MakeWeak();
+}
+
+FileHandle* FileHandle::New(Environment* env, int fd, Local<Object> obj) {
+  if (obj.IsEmpty() && !env->fd_constructor_template()
+                            ->NewInstance(env->context())
+                            .ToLocal(&obj)) {
+    return nullptr;
+  }
   v8::PropertyAttribute attr =
       static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete);
-  object()->DefineOwnProperty(env->context(),
-                              FIXED_ONE_BYTE_STRING(env->isolate(), "fd"),
-                              Integer::New(env->isolate(), fd),
-                              attr).FromJust();
+  if (obj->DefineOwnProperty(env->context(),
+                             env->fd_string(),
+                             Integer::New(env->isolate(), fd),
+                             attr)
+          .IsNothing()) {
+    return nullptr;
+  }
+  return new FileHandle(env, obj, fd);
 }
 
 void FileHandle::New(const FunctionCallbackInfo<Value>& args) {
@@ -130,7 +137,8 @@ void FileHandle::New(const FunctionCallbackInfo<Value>& args) {
   CHECK(args[0]->IsInt32());
 
   FileHandle* handle =
-      new FileHandle(env, args[0].As<Int32>()->Value(), args.This());
+      FileHandle::New(env, args[0].As<Int32>()->Value(), args.This());
+  if (handle == nullptr) return;
   if (args[1]->IsNumber())
     handle->read_offset_ = args[1]->IntegerValue(env->context()).FromJust();
   if (args[2]->IsNumber())
@@ -230,7 +238,14 @@ inline MaybeLocal<Promise> FileHandle::ClosePromise() {
   CHECK(!reading_);
   if (!closed_ && !closing_) {
     closing_ = true;
-    CloseReq* req = new CloseReq(env(), promise, object());
+    Local<Object> close_req_obj;
+    if (!env()
+             ->fdclose_constructor_template()
+             ->NewInstance(env()->context())
+             .ToLocal(&close_req_obj)) {
+      return MaybeLocal<Promise>();
+    }
+    CloseReq* req = new CloseReq(env(), close_req_obj, promise, object());
     auto AfterClose = uv_fs_callback_t{[](uv_fs_t* req) {
       std::unique_ptr<CloseReq> close(CloseReq::from_req(req));
       CHECK_NOT_NULL(close);
@@ -258,7 +273,9 @@ inline MaybeLocal<Promise> FileHandle::ClosePromise() {
 void FileHandle::Close(const FunctionCallbackInfo<Value>& args) {
   FileHandle* fd;
   ASSIGN_OR_RETURN_UNWRAP(&fd, args.Holder());
-  args.GetReturnValue().Set(fd->ClosePromise().ToLocalChecked());
+  Local<Promise> ret;
+  if (!fd->ClosePromise().ToLocal(&ret)) return;
+  args.GetReturnValue().Set(ret);
 }
 
 
@@ -277,6 +294,10 @@ void FileHandle::AfterClose() {
     EmitRead(UV_EOF);
 }
 
+void FileHandleReadWrap::MemoryInfo(MemoryTracker* tracker) const {
+  tracker->TrackField("buffer", buffer_);
+  tracker->TrackField("file_handle", this->file_handle_);
+}
 
 FileHandleReadWrap::FileHandleReadWrap(FileHandle* handle, Local<Object> obj)
   : ReqWrap(handle->env(), obj, AsyncWrap::PROVIDER_FSREQCALLBACK),
@@ -312,8 +333,13 @@ int FileHandle::ReadStart() {
       read_wrap->AsyncReset();
       read_wrap->file_handle_ = this;
     } else {
-      Local<Object> wrap_obj = env()->filehandlereadwrap_template()
-          ->NewInstance(env()->context()).ToLocalChecked();
+      Local<Object> wrap_obj;
+      if (!env()
+               ->filehandlereadwrap_template()
+               ->NewInstance(env()->context())
+               .ToLocal(&wrap_obj)) {
+        return UV_EBUSY;
+      }
       read_wrap.reset(new FileHandleReadWrap(this, wrap_obj));
     }
   }
@@ -422,7 +448,7 @@ void FSReqCallback::Reject(Local<Value> reject) {
 }
 
 void FSReqCallback::ResolveStat(const uv_stat_t* stat) {
-  Resolve(node::FillGlobalStatsArray(env(), stat, use_bigint()));
+  Resolve(FillGlobalStatsArray(env(), use_bigint(), stat));
 }
 
 void FSReqCallback::Resolve(Local<Value> value) {
@@ -514,7 +540,8 @@ void AfterOpenFileHandle(uv_fs_t* req) {
   FSReqAfterScope after(req_wrap, req);
 
   if (after.Proceed()) {
-    FileHandle* fd = new FileHandle(req_wrap->env(), req->result);
+    FileHandle* fd = FileHandle::New(req_wrap->env(), req->result);
+    if (fd == nullptr) return;
     req_wrap->Resolve(fd->object());
   }
 }
@@ -567,10 +594,7 @@ void AfterScanDir(uv_fs_t* req) {
   Environment* env = req_wrap->env();
   Local<Value> error;
   int r;
-  Local<Array> names = Array::New(env->isolate(), 0);
-  Local<Function> fn = env->push_values_to_array_function();
-  Local<Value> name_argv[NODE_PUSH_VAL_TO_ARRAY_MAX];
-  size_t name_idx = 0;
+  std::vector<Local<Value>> name_v;
 
   for (int i = 0; ; i++) {
     uv_dirent_t ent;
@@ -580,8 +604,7 @@ void AfterScanDir(uv_fs_t* req) {
       break;
     if (r != 0) {
       return req_wrap->Reject(
-          UVException(r, nullptr, req_wrap->syscall(),
-            static_cast<const char*>(req->path)));
+          UVException(r, nullptr, req_wrap->syscall(), req->path));
     }
 
     MaybeLocal<Value> filename =
@@ -592,24 +615,10 @@ void AfterScanDir(uv_fs_t* req) {
     if (filename.IsEmpty())
       return req_wrap->Reject(error);
 
-    name_argv[name_idx++] = filename.ToLocalChecked();
-
-    if (name_idx >= arraysize(name_argv)) {
-      MaybeLocal<Value> ret = fn->Call(env->context(), names, name_idx,
-                                       name_argv);
-      if (ret.IsEmpty()) {
-        return;
-      }
-      name_idx = 0;
-    }
+    name_v.push_back(filename.ToLocalChecked());
   }
 
-  if (name_idx > 0) {
-    fn->Call(env->context(), names, name_idx, name_argv)
-      .ToLocalChecked();
-  }
-
-  req_wrap->Resolve(names);
+  req_wrap->Resolve(Array::New(env->isolate(), name_v.data(), name_v.size()));
 }
 
 void AfterScanDirWithTypes(uv_fs_t* req) {
@@ -624,13 +633,9 @@ void AfterScanDirWithTypes(uv_fs_t* req) {
   Isolate* isolate = env->isolate();
   Local<Value> error;
   int r;
-  Local<Array> names = Array::New(isolate, 0);
-  Local<Function> fn = env->push_values_to_array_function();
-  Local<Value> name_argv[NODE_PUSH_VAL_TO_ARRAY_MAX];
-  size_t name_idx = 0;
-  Local<Value> types = Array::New(isolate, 0);
-  Local<Value> type_argv[NODE_PUSH_VAL_TO_ARRAY_MAX];
-  size_t type_idx = 0;
+
+  std::vector<Local<Value>> name_v;
+  std::vector<Local<Value>> type_v;
 
   for (int i = 0; ; i++) {
     uv_dirent_t ent;
@@ -640,8 +645,7 @@ void AfterScanDirWithTypes(uv_fs_t* req) {
       break;
     if (r != 0) {
       return req_wrap->Reject(
-          UVException(r, nullptr, req_wrap->syscall(),
-            static_cast<const char*>(req->path)));
+          UVException(r, nullptr, req_wrap->syscall(), req->path));
     }
 
     MaybeLocal<Value> filename =
@@ -652,48 +656,19 @@ void AfterScanDirWithTypes(uv_fs_t* req) {
     if (filename.IsEmpty())
       return req_wrap->Reject(error);
 
-    name_argv[name_idx++] = filename.ToLocalChecked();
-
-    if (name_idx >= arraysize(name_argv)) {
-      MaybeLocal<Value> ret = fn->Call(env->context(), names, name_idx,
-                                       name_argv);
-      if (ret.IsEmpty()) {
-        return;
-      }
-      name_idx = 0;
-    }
-
-    type_argv[type_idx++] = Integer::New(isolate, ent.type);
-
-    if (type_idx >= arraysize(type_argv)) {
-      MaybeLocal<Value> ret = fn->Call(env->context(), types, type_idx,
-          type_argv);
-      if (ret.IsEmpty()) {
-        return;
-      }
-      type_idx = 0;
-    }
-  }
-
-  if (name_idx > 0) {
-    MaybeLocal<Value> ret = fn->Call(env->context(), names, name_idx,
-        name_argv);
-    if (ret.IsEmpty()) {
-      return;
-    }
-  }
-
-  if (type_idx > 0) {
-    MaybeLocal<Value> ret = fn->Call(env->context(), types, type_idx,
-        type_argv);
-    if (ret.IsEmpty()) {
-      return;
-    }
+    name_v.push_back(filename.ToLocalChecked());
+    type_v.push_back(Integer::New(isolate, ent.type));
   }
 
   Local<Array> result = Array::New(isolate, 2);
-  result->Set(0, names);
-  result->Set(1, types);
+  result->Set(env->context(),
+              0,
+              Array::New(isolate, name_v.data(),
+              name_v.size())).FromJust();
+  result->Set(env->context(),
+              1,
+              Array::New(isolate, type_v.data(),
+              type_v.size())).FromJust();
   req_wrap->Resolve(result);
 }
 
@@ -768,15 +743,18 @@ inline int SyncCall(Environment* env, Local<Value> ctx, FSReqWrapSync* req_wrap,
   return err;
 }
 
+// TODO(addaleax): Currently, callers check the return value and assume
+// that nullptr indicates a synchronous call, rather than a failure.
+// Failure conditions should be disambiguated and handled appropriately.
 inline FSReqBase* GetReqWrap(Environment* env, Local<Value> value,
                              bool use_bigint = false) {
   if (value->IsObject()) {
     return Unwrap<FSReqBase>(value.As<Object>());
   } else if (value->StrictEquals(env->fs_use_promises_symbol())) {
     if (use_bigint) {
-      return new FSReqPromise<uint64_t, BigUint64Array>(env, use_bigint);
+      return FSReqPromise<uint64_t, BigUint64Array>::New(env, use_bigint);
     } else {
-      return new FSReqPromise<double, Float64Array>(env, use_bigint);
+      return FSReqPromise<double, Float64Array>::New(env, use_bigint);
     }
   }
   return nullptr;
@@ -945,8 +923,8 @@ static void Stat(const FunctionCallbackInfo<Value>& args) {
       return;  // error info is in ctx
     }
 
-    Local<Value> arr = node::FillGlobalStatsArray(env,
-        static_cast<const uv_stat_t*>(req_wrap_sync.req.ptr), use_bigint);
+    Local<Value> arr = FillGlobalStatsArray(env, use_bigint,
+        static_cast<const uv_stat_t*>(req_wrap_sync.req.ptr));
     args.GetReturnValue().Set(arr);
   }
 }
@@ -976,8 +954,8 @@ static void LStat(const FunctionCallbackInfo<Value>& args) {
       return;  // error info is in ctx
     }
 
-    Local<Value> arr = node::FillGlobalStatsArray(env,
-        static_cast<const uv_stat_t*>(req_wrap_sync.req.ptr), use_bigint);
+    Local<Value> arr = FillGlobalStatsArray(env, use_bigint,
+        static_cast<const uv_stat_t*>(req_wrap_sync.req.ptr));
     args.GetReturnValue().Set(arr);
   }
 }
@@ -1006,8 +984,8 @@ static void FStat(const FunctionCallbackInfo<Value>& args) {
       return;  // error info is in ctx
     }
 
-    Local<Value> arr = node::FillGlobalStatsArray(env,
-        static_cast<const uv_stat_t*>(req_wrap_sync.req.ptr), use_bigint);
+    Local<Value> arr = FillGlobalStatsArray(env, use_bigint,
+        static_cast<const uv_stat_t*>(req_wrap_sync.req.ptr));
     args.GetReturnValue().Set(arr);
   }
 }
@@ -1493,18 +1471,8 @@ static void ReadDir(const FunctionCallbackInfo<Value>& args) {
 
     CHECK_GE(req_wrap_sync.req.result, 0);
     int r;
-    Local<Array> names = Array::New(isolate, 0);
-    Local<Function> fn = env->push_values_to_array_function();
-    Local<Value> name_v[NODE_PUSH_VAL_TO_ARRAY_MAX];
-    size_t name_idx = 0;
-
-    Local<Value> types;
-    Local<Value> type_v[NODE_PUSH_VAL_TO_ARRAY_MAX];
-    size_t type_idx;
-    if (with_types) {
-      types = Array::New(isolate, 0);
-      type_idx = 0;
-    }
+    std::vector<Local<Value>> name_v;
+    std::vector<Local<Value>> type_v;
 
     for (int i = 0; ; i++) {
       uv_dirent_t ent;
@@ -1533,49 +1501,22 @@ static void ReadDir(const FunctionCallbackInfo<Value>& args) {
         return;
       }
 
-      name_v[name_idx++] = filename.ToLocalChecked();
-
-      if (name_idx >= arraysize(name_v)) {
-        MaybeLocal<Value> ret = fn->Call(env->context(), names, name_idx,
-                                         name_v);
-        if (ret.IsEmpty()) {
-          return;
-        }
-        name_idx = 0;
-      }
+      name_v.push_back(filename.ToLocalChecked());
 
       if (with_types) {
-        type_v[type_idx++] = Integer::New(isolate, ent.type);
-
-        if (type_idx >= arraysize(type_v)) {
-          MaybeLocal<Value> ret = fn->Call(env->context(), types, type_idx,
-              type_v);
-          if (ret.IsEmpty()) {
-            return;
-          }
-          type_idx = 0;
-        }
+        type_v.push_back(Integer::New(isolate, ent.type));
       }
     }
 
-    if (name_idx > 0) {
-      MaybeLocal<Value> ret = fn->Call(env->context(), names, name_idx, name_v);
-      if (ret.IsEmpty()) {
-        return;
-      }
-    }
 
-    if (with_types && type_idx > 0) {
-      MaybeLocal<Value> ret = fn->Call(env->context(), types, type_idx, type_v);
-      if (ret.IsEmpty()) {
-        return;
-      }
-    }
-
+    Local<Array> names = Array::New(isolate, name_v.data(), name_v.size());
     if (with_types) {
       Local<Array> result = Array::New(isolate, 2);
-      result->Set(0, names);
-      result->Set(1, types);
+      result->Set(env->context(), 0, names).FromJust();
+      result->Set(env->context(),
+                  1,
+                  Array::New(isolate, type_v.data(),
+                             type_v.size())).FromJust();
       args.GetReturnValue().Set(result);
     } else {
       args.GetReturnValue().Set(names);
@@ -1643,8 +1584,8 @@ static void OpenFileHandle(const FunctionCallbackInfo<Value>& args) {
     if (result < 0) {
       return;  // syscall failed, no need to continue, error info is in ctx
     }
-    HandleScope scope(isolate);
-    FileHandle* fd = new FileHandle(env, result);
+    FileHandle* fd = FileHandle::New(env, result);
+    if (fd == nullptr) return;
     args.GetReturnValue().Set(fd->object());
   }
 }
@@ -1759,7 +1700,7 @@ static void WriteBuffers(const FunctionCallbackInfo<Value>& args) {
   MaybeStackBuffer<uv_buf_t> iovs(chunks->Length());
 
   for (uint32_t i = 0; i < iovs.length(); i++) {
-    Local<Value> chunk = chunks->Get(i);
+    Local<Value> chunk = chunks->Get(env->context(), i).ToLocalChecked();
     CHECK(Buffer::HasInstance(chunk));
     iovs[i] = uv_buf_init(Buffer::Data(chunk), Buffer::Length(chunk));
   }
@@ -2233,8 +2174,8 @@ void Initialize(Local<Object> target,
   env->SetMethod(target, "mkdtemp", Mkdtemp);
 
   target->Set(context,
-              FIXED_ONE_BYTE_STRING(isolate, "kFsStatsFieldsLength"),
-              Integer::New(isolate, env->kFsStatsFieldsLength))
+              FIXED_ONE_BYTE_STRING(isolate, "kFsStatsFieldsNumber"),
+              Integer::New(isolate, kFsStatsFieldsNumber))
         .FromJust();
 
   target->Set(context,
@@ -2250,7 +2191,7 @@ void Initialize(Local<Object> target,
   // Create FunctionTemplate for FSReqCallback
   Local<FunctionTemplate> fst = env->NewFunctionTemplate(NewFSReqCallback);
   fst->InstanceTemplate()->SetInternalFieldCount(1);
-  AsyncWrap::AddWrapMethods(env, fst);
+  fst->Inherit(AsyncWrap::GetConstructorTemplate(env));
   Local<String> wrapString =
       FIXED_ONE_BYTE_STRING(isolate, "FSReqCallback");
   fst->SetClassName(wrapString);
@@ -2263,7 +2204,7 @@ void Initialize(Local<Object> target,
   // to do anything in the constructor, so we only store the instance template.
   Local<FunctionTemplate> fh_rw = FunctionTemplate::New(isolate);
   fh_rw->InstanceTemplate()->SetInternalFieldCount(1);
-  AsyncWrap::AddWrapMethods(env, fh_rw);
+  fh_rw->Inherit(AsyncWrap::GetConstructorTemplate(env));
   Local<String> fhWrapString =
       FIXED_ONE_BYTE_STRING(isolate, "FileHandleReqWrap");
   fh_rw->SetClassName(fhWrapString);
@@ -2272,7 +2213,7 @@ void Initialize(Local<Object> target,
 
   // Create Function Template for FSReqPromise
   Local<FunctionTemplate> fpt = FunctionTemplate::New(isolate);
-  AsyncWrap::AddWrapMethods(env, fpt);
+  fpt->Inherit(AsyncWrap::GetConstructorTemplate(env));
   Local<String> promiseString =
       FIXED_ONE_BYTE_STRING(isolate, "FSReqPromise");
   fpt->SetClassName(promiseString);
@@ -2282,7 +2223,7 @@ void Initialize(Local<Object> target,
 
   // Create FunctionTemplate for FileHandle
   Local<FunctionTemplate> fd = env->NewFunctionTemplate(FileHandle::New);
-  AsyncWrap::AddWrapMethods(env, fd);
+  fd->Inherit(AsyncWrap::GetConstructorTemplate(env));
   env->SetProtoMethod(fd, "close", FileHandle::Close);
   env->SetProtoMethod(fd, "releaseFD", FileHandle::ReleaseFD);
   Local<ObjectTemplate> fdt = fd->InstanceTemplate();
@@ -2301,7 +2242,7 @@ void Initialize(Local<Object> target,
   Local<FunctionTemplate> fdclose = FunctionTemplate::New(isolate);
   fdclose->SetClassName(FIXED_ONE_BYTE_STRING(isolate,
                         "FileHandleCloseReq"));
-  AsyncWrap::AddWrapMethods(env, fdclose);
+  fdclose->Inherit(AsyncWrap::GetConstructorTemplate(env));
   Local<ObjectTemplate> fdcloset = fdclose->InstanceTemplate();
   fdcloset->SetInternalFieldCount(1);
   env->set_fdclose_constructor_template(fdcloset);
@@ -2319,4 +2260,4 @@ void Initialize(Local<Object> target,
 
 }  // end namespace node
 
-NODE_BUILTIN_MODULE_CONTEXT_AWARE(fs, node::fs::Initialize)
+NODE_MODULE_CONTEXT_AWARE_INTERNAL(fs, node::fs::Initialize)

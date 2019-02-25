@@ -3,7 +3,6 @@
 const common = require('../common');
 const { Writable } = require('stream');
 const assert = require('assert');
-const { inherits } = require('util');
 
 {
   const write = new Writable({
@@ -161,7 +160,7 @@ const { inherits } = require('util');
   write.destroyed = true;
   assert.strictEqual(write.destroyed, true);
 
-  // the internal destroy() mechanism should not be triggered
+  // The internal destroy() mechanism should not be triggered
   write.on('close', common.mustNotCall());
   write.destroy();
 }
@@ -173,7 +172,8 @@ const { inherits } = require('util');
     Writable.call(this);
   }
 
-  inherits(MyWritable, Writable);
+  Object.setPrototypeOf(MyWritable.prototype, Writable.prototype);
+  Object.setPrototypeOf(MyWritable, Writable);
 
   new MyWritable();
 }
@@ -189,7 +189,7 @@ const { inherits } = require('util');
   const expected = new Error('kaboom');
 
   write.destroy(expected, common.mustCall(function(err) {
-    assert.strictEqual(expected, err);
+    assert.strictEqual(err, expected);
   }));
 }
 

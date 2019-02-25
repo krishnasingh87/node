@@ -5,8 +5,14 @@ const {
   hijackStdout,
   restoreStdout,
 } = require('../common/hijackstdio');
+
+const { internalBinding } = require('internal/test/binding');
 const assert = require('assert');
 const errors = require('internal/errors');
+
+// Turn off ANSI color formatting for this test file.
+const { inspect } = require('util');
+inspect.defaultOptions.colors = false;
 
 errors.E('TEST_ERROR_1', 'Error for testing purposes: %s',
          Error, TypeError, RangeError);
@@ -183,7 +189,7 @@ assert.strictEqual(
   'Invalid asyncId value: undefined');
 
 {
-  const { kMaxLength } = process.binding('buffer');
+  const { kMaxLength } = internalBinding('buffer');
   const error = new errors.codes.ERR_BUFFER_TOO_LARGE();
   assert.strictEqual(
     error.message,
@@ -262,4 +268,14 @@ assert.strictEqual(
   assert.strictEqual(subsequentConsoleLog, initialConsoleLog);
 
   restoreStdout();
+}
+
+{
+  const error = new errors.codes.ERR_WORKER_INVALID_EXEC_ARGV(
+    ['--foo, --bar']
+  );
+  assert.strictEqual(
+    error.message,
+    'Initiated Worker with invalid execArgv flags: --foo, --bar'
+  );
 }

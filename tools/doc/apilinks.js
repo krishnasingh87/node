@@ -18,7 +18,7 @@
 //    `function X(...) {...}`). Over time, we expect to handle more
 //    cases (example: ES2015 class definitions).
 
-const acorn = require('../../deps/acorn');
+const acorn = require('../../deps/acorn/acorn');
 const fs = require('fs');
 const path = require('path');
 const child_process = require('child_process');
@@ -35,7 +35,7 @@ function execSync(command) {
   }
 }
 
-// Determine orign repo and tag (or hash) of the most recent commit.
+// Determine origin repo and tag (or hash) of the most recent commit.
 const local_branch = execSync('git name-rev --name-only HEAD');
 const tracking_remote = execSync(`git config branch.${local_branch}.remote`);
 const remote_url = execSync(`git config remote.${tracking_remote}.url`);
@@ -47,7 +47,9 @@ const tag = execSync(`git describe --contains ${hash}`).split('\n')[0] || hash;
 
 // Extract definitions from each file specified.
 const definition = {};
-process.argv.slice(2).forEach((file) => {
+const output = process.argv[2];
+const inputs = process.argv.slice(3);
+inputs.forEach((file) => {
   const basename = path.basename(file, '.js');
 
   // Parse source.
@@ -206,4 +208,4 @@ process.argv.slice(2).forEach((file) => {
   }
 });
 
-console.log(JSON.stringify(definition, null, 2));
+fs.writeFileSync(output, JSON.stringify(definition, null, 2), 'utf8');

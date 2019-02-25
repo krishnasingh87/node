@@ -77,21 +77,18 @@ using BIOPointer = DeleteFnPtr<BIO, BIO_free_all>;
 using SSLCtxPointer = DeleteFnPtr<SSL_CTX, SSL_CTX_free>;
 using SSLSessionPointer = DeleteFnPtr<SSL_SESSION, SSL_SESSION_free>;
 using SSLPointer = DeleteFnPtr<SSL, SSL_free>;
+using PKCS8Pointer = DeleteFnPtr<PKCS8_PRIV_KEY_INFO, PKCS8_PRIV_KEY_INFO_free>;
 using EVPKeyPointer = DeleteFnPtr<EVP_PKEY, EVP_PKEY_free>;
 using EVPKeyCtxPointer = DeleteFnPtr<EVP_PKEY_CTX, EVP_PKEY_CTX_free>;
 using EVPMDPointer = DeleteFnPtr<EVP_MD_CTX, EVP_MD_CTX_free>;
 using RSAPointer = DeleteFnPtr<RSA, RSA_free>;
+using ECPointer = DeleteFnPtr<EC_KEY, EC_KEY_free>;
 using BignumPointer = DeleteFnPtr<BIGNUM, BN_free>;
 using NetscapeSPKIPointer = DeleteFnPtr<NETSCAPE_SPKI, NETSCAPE_SPKI_free>;
 using ECGroupPointer = DeleteFnPtr<EC_GROUP, EC_GROUP_free>;
 using ECPointPointer = DeleteFnPtr<EC_POINT, EC_POINT_free>;
 using ECKeyPointer = DeleteFnPtr<EC_KEY, EC_KEY_free>;
 using DHPointer = DeleteFnPtr<DH, DH_free>;
-
-enum CheckResult {
-  CHECK_CERT_REVOKED = 0,
-  CHECK_OK = 1
-};
 
 extern int VerifyCallback(int preverify_ok, X509_STORE_CTX* ctx);
 
@@ -107,11 +104,10 @@ class SecureContext : public BaseObject {
 
   static void Initialize(Environment* env, v8::Local<v8::Object> target);
 
-  void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
-  }
-
-  ADD_MEMORY_INFO_NAME(SecureContext)
+  // TODO(joyeecheung): track the memory used by OpenSSL types
+  SET_NO_MEMORY_INFO()
+  SET_MEMORY_INFO_NAME(SecureContext)
+  SET_SELF_SIZE(SecureContext)
 
   SSLCtxPointer ctx_;
   X509Pointer cert_;
@@ -171,6 +167,7 @@ class SecureContext : public BaseObject {
       const v8::FunctionCallbackInfo<v8::Value>& args);
   static void EnableTicketKeyCallback(
       const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void CtxGetter(const v8::FunctionCallbackInfo<v8::Value>& info);
 
   template <bool primary>
   static void GetCertificate(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -222,7 +219,7 @@ class SSLWrap {
         kind_(kind),
         next_sess_(nullptr),
         session_callbacks_(false),
-        new_session_wait_(false),
+        awaiting_new_session_(false),
         cert_cb_(nullptr),
         cert_cb_arg_(nullptr),
         cert_cb_running_(false) {
@@ -238,7 +235,7 @@ class SSLWrap {
   inline void enable_session_callbacks() { session_callbacks_ = true; }
   inline bool is_server() const { return kind_ == kServer; }
   inline bool is_client() const { return kind_ == kClient; }
-  inline bool is_waiting_new_session() const { return new_session_wait_; }
+  inline bool is_awaiting_new_session() const { return awaiting_new_session_; }
   inline bool is_waiting_cert_cb() const { return cert_cb_ != nullptr; }
 
  protected:
@@ -276,6 +273,7 @@ class SSLWrap {
 
   static void GetPeerCertificate(
       const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void GetCertificate(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetFinished(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetPeerFinished(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetSession(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -328,7 +326,7 @@ class SSLWrap {
   SSLSessionPointer next_sess_;
   SSLPointer ssl_;
   bool session_callbacks_;
-  bool new_session_wait_;
+  bool awaiting_new_session_;
 
   // SSL_set_cert_cb
   CertCb cert_cb_;
@@ -343,15 +341,171 @@ class SSLWrap {
   friend class SecureContext;
 };
 
+// A helper class representing a read-only byte array. When deallocated, its
+// contents are zeroed.
+class ByteSource {
+ public:
+  ByteSource() = default;
+  ByteSource(ByteSource&& other);
+  ~ByteSource();
+
+  ByteSource& operator=(ByteSource&& other);
+
+  const char* get() const;
+  size_t size() const;
+
+  static ByteSource FromStringOrBuffer(Environment* env,
+                                       v8::Local<v8::Value> value);
+
+  static ByteSource FromString(Environment* env,
+                               v8::Local<v8::String> str,
+                               bool ntc = false);
+
+  static ByteSource FromBuffer(v8::Local<v8::Value> buffer,
+                               bool ntc = false);
+
+  static ByteSource NullTerminatedCopy(Environment* env,
+                                       v8::Local<v8::Value> value);
+
+  static ByteSource FromSymmetricKeyObject(v8::Local<v8::Value> handle);
+
+ private:
+  const char* data_ = nullptr;
+  char* allocated_data_ = nullptr;
+  size_t size_ = 0;
+
+  ByteSource(const char* data, char* allocated_data, size_t size);
+
+  static ByteSource Allocated(char* data, size_t size);
+  static ByteSource Foreign(const char* data, size_t size);
+
+  DISALLOW_COPY_AND_ASSIGN(ByteSource);
+};
+
+enum PKEncodingType {
+  // RSAPublicKey / RSAPrivateKey according to PKCS#1.
+  kKeyEncodingPKCS1,
+  // PrivateKeyInfo or EncryptedPrivateKeyInfo according to PKCS#8.
+  kKeyEncodingPKCS8,
+  // SubjectPublicKeyInfo according to X.509.
+  kKeyEncodingSPKI,
+  // ECPrivateKey according to SEC1.
+  kKeyEncodingSEC1
+};
+
+enum PKFormatType {
+  kKeyFormatDER,
+  kKeyFormatPEM
+};
+
+struct AsymmetricKeyEncodingConfig {
+  bool output_key_object_;
+  PKFormatType format_;
+  v8::Maybe<PKEncodingType> type_ = v8::Nothing<PKEncodingType>();
+};
+
+typedef AsymmetricKeyEncodingConfig PublicKeyEncodingConfig;
+
+struct PrivateKeyEncodingConfig : public AsymmetricKeyEncodingConfig {
+  const EVP_CIPHER* cipher_;
+  ByteSource passphrase_;
+};
+
+enum KeyType {
+  kKeyTypeSecret,
+  kKeyTypePublic,
+  kKeyTypePrivate
+};
+
+// This uses the built-in reference counter of OpenSSL to manage an EVP_PKEY
+// which is slightly more efficient than using a shared pointer and easier to
+// use.
+class ManagedEVPPKey {
+ public:
+  ManagedEVPPKey();
+  explicit ManagedEVPPKey(EVP_PKEY* pkey);
+  ManagedEVPPKey(const ManagedEVPPKey& key);
+  ManagedEVPPKey(ManagedEVPPKey&& key);
+  ~ManagedEVPPKey();
+
+  ManagedEVPPKey& operator=(const ManagedEVPPKey& key);
+  ManagedEVPPKey& operator=(ManagedEVPPKey&& key);
+
+  operator bool() const;
+  EVP_PKEY* get() const;
+
+ private:
+  EVP_PKEY* pkey_;
+};
+
+class KeyObject : public BaseObject {
+ public:
+  static v8::Local<v8::Function> Initialize(Environment* env,
+                                            v8::Local<v8::Object> target);
+
+  static v8::MaybeLocal<v8::Object> Create(Environment* env,
+                                           KeyType type,
+                                           const ManagedEVPPKey& pkey);
+
+  // TODO(tniessen): track the memory used by OpenSSL types
+  SET_NO_MEMORY_INFO()
+  SET_MEMORY_INFO_NAME(KeyObject)
+  SET_SELF_SIZE(KeyObject)
+
+  KeyType GetKeyType() const;
+
+  // These functions allow unprotected access to the raw key material and should
+  // only be used to implement cryptograohic operations requiring the key.
+  ManagedEVPPKey GetAsymmetricKey() const;
+  const char* GetSymmetricKey() const;
+  size_t GetSymmetricKeySize() const;
+
+ protected:
+  static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  static void Init(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void InitSecret(const char* key, size_t key_len);
+  void InitPublic(const ManagedEVPPKey& pkey);
+  void InitPrivate(const ManagedEVPPKey& pkey);
+
+  static void GetAsymmetricKeyType(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+  v8::Local<v8::String> GetAsymmetricKeyType() const;
+
+  static void GetSymmetricKeySize(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  static void Export(const v8::FunctionCallbackInfo<v8::Value>& args);
+  v8::Local<v8::Value> ExportSecretKey() const;
+  v8::MaybeLocal<v8::Value> ExportPublicKey(
+      const PublicKeyEncodingConfig& config) const;
+  v8::MaybeLocal<v8::Value> ExportPrivateKey(
+      const PrivateKeyEncodingConfig& config) const;
+
+  KeyObject(Environment* env,
+            v8::Local<v8::Object> wrap,
+            KeyType key_type)
+      : BaseObject(env, wrap),
+        key_type_(key_type),
+        symmetric_key_(nullptr, nullptr) {
+    MakeWeak();
+  }
+
+ private:
+  const KeyType key_type_;
+  std::unique_ptr<char, std::function<void(char*)>> symmetric_key_;
+  unsigned int symmetric_key_len_;
+  ManagedEVPPKey asymmetric_key_;
+};
+
 class CipherBase : public BaseObject {
  public:
   static void Initialize(Environment* env, v8::Local<v8::Object> target);
 
-  void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
-  }
-
-  ADD_MEMORY_INFO_NAME(CipherBase)
+  // TODO(joyeecheung): track the memory used by OpenSSL types
+  SET_NO_MEMORY_INFO()
+  SET_MEMORY_INFO_NAME(CipherBase)
+  SET_SELF_SIZE(CipherBase)
 
  protected:
   enum CipherKind {
@@ -390,9 +544,8 @@ class CipherBase : public BaseObject {
   bool InitAuthenticated(const char* cipher_type, int iv_len,
                          unsigned int auth_tag_len);
   bool CheckCCMMessageLength(int message_len);
-  UpdateResult Update(const char* data, int len, unsigned char** out,
-                      int* out_len);
-  bool Final(unsigned char** out, int* out_len);
+  UpdateResult Update(const char* data, int len, AllocatedBuffer* out);
+  bool Final(AllocatedBuffer* out);
   bool SetAutoPadding(bool auto_padding);
 
   bool IsAuthenticatedMode() const;
@@ -436,11 +589,10 @@ class Hmac : public BaseObject {
  public:
   static void Initialize(Environment* env, v8::Local<v8::Object> target);
 
-  void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
-  }
-
-  ADD_MEMORY_INFO_NAME(Hmac)
+  // TODO(joyeecheung): track the memory used by OpenSSL types
+  SET_NO_MEMORY_INFO()
+  SET_MEMORY_INFO_NAME(Hmac)
+  SET_SELF_SIZE(Hmac)
 
  protected:
   void HmacInit(const char* hash_type, const char* key, int key_len);
@@ -465,11 +617,10 @@ class Hash : public BaseObject {
  public:
   static void Initialize(Environment* env, v8::Local<v8::Object> target);
 
-  void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
-  }
-
-  ADD_MEMORY_INFO_NAME(Hash)
+  // TODO(joyeecheung): track the memory used by OpenSSL types
+  SET_NO_MEMORY_INFO()
+  SET_MEMORY_INFO_NAME(Hash)
+  SET_SELF_SIZE(Hash)
 
   bool HashInit(const char* hash_type);
   bool HashUpdate(const char* data, int len);
@@ -481,14 +632,12 @@ class Hash : public BaseObject {
 
   Hash(Environment* env, v8::Local<v8::Object> wrap)
       : BaseObject(env, wrap),
-        mdctx_(nullptr),
-        finalized_(false) {
+        mdctx_(nullptr) {
     MakeWeak();
   }
 
  private:
   EVPMDPointer mdctx_;
-  bool finalized_;
 };
 
 class SignBase : public BaseObject {
@@ -510,11 +659,10 @@ class SignBase : public BaseObject {
   Error Init(const char* sign_type);
   Error Update(const char* data, int len);
 
-  void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
-  }
-
-  ADD_MEMORY_INFO_NAME(SignBase)
+  // TODO(joyeecheung): track the memory used by OpenSSL types
+  SET_NO_MEMORY_INFO()
+  SET_MEMORY_INFO_NAME(SignBase)
+  SET_SELF_SIZE(SignBase)
 
  protected:
   void CheckThrow(Error error);
@@ -526,13 +674,20 @@ class Sign : public SignBase {
  public:
   static void Initialize(Environment* env, v8::Local<v8::Object> target);
 
-  Error SignFinal(const char* key_pem,
-                  int key_pem_len,
-                  const char* passphrase,
-                  unsigned char* sig,
-                  unsigned int* sig_len,
-                  int padding,
-                  int saltlen);
+  struct SignResult {
+    Error error;
+    AllocatedBuffer signature;
+
+    explicit SignResult(
+        Error err,
+        AllocatedBuffer&& sig = AllocatedBuffer())
+      : error(err), signature(std::move(sig)) {}
+  };
+
+  SignResult SignFinal(
+      const ManagedEVPPKey& pkey,
+      int padding,
+      int saltlen);
 
  protected:
   static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -549,8 +704,7 @@ class Verify : public SignBase {
  public:
   static void Initialize(Environment* env, v8::Local<v8::Object> target);
 
-  Error VerifyFinal(const char* key_pem,
-                    int key_pem_len,
+  Error VerifyFinal(const ManagedEVPPKey& key,
                     const char* sig,
                     int siglen,
                     int padding,
@@ -583,14 +737,12 @@ class PublicKeyCipher {
   template <Operation operation,
             EVP_PKEY_cipher_init_t EVP_PKEY_cipher_init,
             EVP_PKEY_cipher_t EVP_PKEY_cipher>
-  static bool Cipher(const char* key_pem,
-                     int key_pem_len,
-                     const char* passphrase,
+  static bool Cipher(Environment* env,
+                     const ManagedEVPPKey& pkey,
                      int padding,
                      const unsigned char* data,
                      int len,
-                     unsigned char** out,
-                     size_t* out_len);
+                     AllocatedBuffer* out);
 
   template <Operation operation,
             EVP_PKEY_cipher_init_t EVP_PKEY_cipher_init,
@@ -623,16 +775,14 @@ class DiffieHellman : public BaseObject {
 
   DiffieHellman(Environment* env, v8::Local<v8::Object> wrap)
       : BaseObject(env, wrap),
-        initialised_(false),
         verifyError_(0) {
     MakeWeak();
   }
 
-  void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
-  }
-
-  ADD_MEMORY_INFO_NAME(DiffieHellman)
+  // TODO(joyeecheung): track the memory used by OpenSSL types
+  SET_NO_MEMORY_INFO()
+  SET_MEMORY_INFO_NAME(DiffieHellman)
+  SET_SELF_SIZE(DiffieHellman)
 
  private:
   static void GetField(const v8::FunctionCallbackInfo<v8::Value>& args,
@@ -642,7 +792,6 @@ class DiffieHellman : public BaseObject {
                      int (*set_field)(DH*, BIGNUM*), const char* what);
   bool VerifyContext();
 
-  bool initialised_;
   int verifyError_;
   DHPointer dh_;
 };
@@ -659,11 +808,10 @@ class ECDH : public BaseObject {
                                       char* data,
                                       size_t len);
 
-  void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
-  }
-
-  ADD_MEMORY_INFO_NAME(ECDH)
+  // TODO(joyeecheung): track the memory used by OpenSSL types
+  SET_NO_MEMORY_INFO()
+  SET_MEMORY_INFO_NAME(ECDH)
+  SET_SELF_SIZE(ECDH)
 
  protected:
   ECDH(Environment* env, v8::Local<v8::Object> wrap, ECKeyPointer&& key)

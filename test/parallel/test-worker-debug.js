@@ -1,4 +1,3 @@
-// Flags: --experimental-worker
 'use strict';
 const common = require('../common');
 
@@ -130,11 +129,11 @@ class WorkerSession extends EventEmitter {
 
 async function testBasicWorkerDebug(session, post) {
   /*
-    1. Do 'enble' with waitForDebuggerOnStart = true
+    1. Do 'enable' with waitForDebuggerOnStart = true
     2. Run worker. It should break on start.
     3. Enable Runtime (to get console message) and Debugger. Resume.
     4. Breaks on the 'debugger' statement. Resume.
-    5. Console message recieved, worker runs to a completion.
+    5. Console message received, worker runs to a completion.
     6. contextCreated/contextDestroyed had been properly dispatched
   */
   console.log('Test basic debug scenario');
@@ -154,9 +153,9 @@ async function testBasicWorkerDebug(session, post) {
   await workerSession.post('Debugger.enable');
   await workerSession.post('Runtime.enable');
   await workerSession.waitForBreakAfterCommand(
-    'Runtime.runIfWaitingForDebugger', __filename, 2);
+    'Runtime.runIfWaitingForDebugger', __filename, 1);
   await workerSession.waitForBreakAfterCommand(
-    'Debugger.resume', __filename, 27);  // V8 line number is zero-based
+    'Debugger.resume', __filename, 26);  // V8 line number is zero-based
   assert.strictEqual(await consolePromise, workerMessage);
   workerSession.post('Debugger.resume');
   await Promise.all([worker, detached, contextEvents]);

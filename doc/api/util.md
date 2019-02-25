@@ -159,7 +159,7 @@ const util = require('util');
 const fn1 = util.deprecate(someFunction, someMessage, 'DEP0001');
 const fn2 = util.deprecate(someOtherFunction, someOtherMessage, 'DEP0001');
 fn1(); // emits a deprecation warning with code DEP0001
-fn2(); // does not emit a deprecation warning because it has the same code
+fn2(); // Does not emit a deprecation warning because it has the same code
 ```
 
 If either the `--no-deprecation` or `--no-warnings` command line flags are
@@ -183,6 +183,31 @@ property take precedence over `--trace-deprecation` and
 <!-- YAML
 added: v0.5.3
 changes:
+  - version: v11.4.0
+    pr-url: https://github.com/nodejs/node/pull/23708
+    description: The `%d`, `%f` and `%i` specifiers now support Symbols
+                 properly.
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/23162
+    description: The `format` argument is now only taken as such if it actually
+                 contains format specifiers.
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/23162
+    description: If the `format` argument is not a format string, the output
+                 string's formatting is no longer dependent on the type of the
+                 first argument. This change removes previously present quotes
+                 from strings that were being output when the first argument
+                 was not a string.
+  - version: v11.4.0
+    pr-url: https://github.com/nodejs/node/pull/24806
+    description: The `%o` specifier's `depth` has default depth of 4 again.
+  - version: v11.0.0
+    pr-url: https://github.com/nodejs/node/pull/17907
+    description: The `%o` specifier's `depth` option will now fall back to the
+                 default depth.
+  - version: v10.12.0
+    pr-url: https://github.com/nodejs/node/pull/22097
+    description: The `%d` and `%i` specifiers now support BigInt.
   - version: v8.4.0
     pr-url: https://github.com/nodejs/node/pull/14558
     description: The `%o` and `%O` specifiers are supported now.
@@ -191,15 +216,13 @@ changes:
 * `format` {string} A `printf`-like format string.
 
 The `util.format()` method returns a formatted string using the first argument
-as a `printf`-like format.
-
-The first argument is a string containing zero or more *placeholder* tokens.
-Each placeholder token is replaced with the converted value from the
-corresponding argument. Supported placeholders are:
+as a `printf`-like format string which can contain zero or more format
+specifiers. Each specifier is replaced with the converted value from the
+corresponding argument. Supported specifiers are:
 
 * `%s` - `String`.
-* `%d` - `Number` (integer or floating point value).
-* `%i` - Integer.
+* `%d` - `Number` (integer or floating point value) or `BigInt`.
+* `%i` - Integer or `BigInt`.
 * `%f` - Floating point value.
 * `%j` - JSON. Replaced with the string `'[Circular]'` if the argument
 contains circular references.
@@ -214,37 +237,39 @@ contains circular references.
 * `%%` - single percent sign (`'%'`). This does not consume an argument.
 * Returns: {string} The formatted string
 
-If the placeholder does not have a corresponding argument, the placeholder is
-not replaced.
+If a specifier does not have a corresponding argument, it is not replaced:
 
 ```js
 util.format('%s:%s', 'foo');
 // Returns: 'foo:%s'
 ```
 
-If there are more arguments passed to the `util.format()` method than the number
-of placeholders, the extra arguments are coerced into strings then concatenated
-to the returned string, each delimited by a space. Excessive arguments whose
-`typeof` is `'object'` or `'symbol'` (except `null`) will be transformed by
-`util.inspect()`.
+Values that are not part of the format string are formatted using
+`util.inspect()` if their type is not `string`.
+
+If there are more arguments passed to the `util.format()` method than the
+number of specifiers, the extra arguments are concatenated to the returned
+string, separated by spaces:
 
 ```js
-util.format('%s:%s', 'foo', 'bar', 'baz'); // 'foo:bar baz'
+util.format('%s:%s', 'foo', 'bar', 'baz');
+// Returns: 'foo:bar baz'
 ```
 
-If the first argument is not a string then `util.format()` returns
-a string that is the concatenation of all arguments separated by spaces.
-Each argument is converted to a string using `util.inspect()`.
+If the first argument does not contain a valid format specifier, `util.format()`
+returns a string that is the concatenation of all arguments separated by spaces:
 
 ```js
-util.format(1, 2, 3); // '1 2 3'
+util.format(1, 2, 3);
+// Returns: '1 2 3'
 ```
 
 If only one argument is passed to `util.format()`, it is returned as it is
-without any formatting.
+without any formatting:
 
 ```js
-util.format('%% %s'); // '%% %s'
+util.format('%% %s');
+// Returns: '%% %s'
 ```
 
 Please note that `util.format()` is a synchronous method that is mainly
@@ -309,6 +334,8 @@ Inherit the prototype methods from one [constructor][] into another. The
 prototype of `constructor` will be set to a new object created from
 `superConstructor`.
 
+This mainly adds some input validation on top of
+`Object.setPrototypeOf(constructor.prototype, superConstructor.prototype)`.
 As an additional convenience, `superConstructor` will be accessible
 through the `constructor.super_` property.
 
@@ -357,13 +384,26 @@ stream.write('With ES6');
 ```
 
 ## util.inspect(object[, options])
+## util.inspect(object[, showHidden[, depth[, colors]]])
 <!-- YAML
 added: v0.3.0
 changes:
-  - version: REPLACEME
+  - version: v11.7.0
+    pr-url: https://github.com/nodejs/node/pull/25006
+    description: ArrayBuffers now also show their binary contents.
+  - version: v11.5.0
+    pr-url: https://github.com/nodejs/node/pull/24852
+    description: The `getters` option is supported now.
+  - version: v11.4.0
+    pr-url: https://github.com/nodejs/node/pull/24326
+    description: The `depth` default changed back to `2`.
+  - version: v11.0.0
+    pr-url: https://github.com/nodejs/node/pull/22846
+    description: The `depth` default changed to `20`.
+  - version: v10.12.0
     pr-url: https://github.com/nodejs/node/pull/22788
     description: The `sorted` option is supported now.
-  - version: REPLACEME
+  - version: v11.0.0
     pr-url: https://github.com/nodejs/node/pull/22756
     description: The inspection output is now limited to about 128 MB. Data
                  above that size will not be fully inspected.
@@ -395,26 +435,21 @@ changes:
 
 * `object` {any} Any JavaScript primitive or `Object`.
 * `options` {Object}
-  * `showHidden` {boolean} If `true`, the `object`'s non-enumerable symbols and
-    properties will be included in the formatted result as well as [`WeakMap`][]
-    and [`WeakSet`][] entries. **Default:** `false`.
+  * `showHidden` {boolean} If `true`, `object`'s non-enumerable symbols and
+    properties are included in the formatted result. [`WeakMap`][] and
+    [`WeakSet`][] entries are also included. **Default:** `false`.
   * `depth` {number} Specifies the number of times to recurse while formatting
-    the `object`. This is useful for inspecting large complicated objects. To
-    make it recurse up to the maximum call stack size pass `Infinity` or `null`.
+    `object`. This is useful for inspecting large objects. To recurse up to
+    the maximum call stack size pass `Infinity` or `null`.
     **Default:** `2`.
-  * `colors` {boolean} If `true`, the output will be styled with ANSI color
-    codes. Colors are customizable, see [Customizing `util.inspect` colors][].
+  * `colors` {boolean} If `true`, the output is styled with ANSI color
+    codes. Colors are customizable. See [Customizing `util.inspect` colors][].
     **Default:** `false`.
-  * `customInspect` {boolean} If `false`, then
-    `[util.inspect.custom](depth, opts)` functions will not be called.
+  * `customInspect` {boolean} If `false`,
+    `[util.inspect.custom](depth, opts)` functions are not invoked.
     **Default:** `true`.
-  * `showProxy` {boolean} If `true`, then objects and functions that are
-    `Proxy` objects will be introspected to show their `target` and `handler`
-    objects. **Default:** `false`.
-    <!--
-    TODO(BridgeAR): Deprecate `maxArrayLength` and replace it with
-                    `maxEntries`.
-    -->
+  * `showProxy` {boolean} If `true`, `Proxy` inspection includes
+    the [`target` and `handler`][] objects. **Default:** `false`.
   * `maxArrayLength` {integer} Specifies the maximum number of `Array`,
     [`TypedArray`][], [`WeakMap`][] and [`WeakSet`][] elements to include when
     formatting. Set to `null` or `Infinity` to show all elements. Set to `0` or
@@ -422,23 +457,26 @@ changes:
   * `breakLength` {integer} The length at which an object's keys are split
     across multiple lines. Set to `Infinity` to format an object as a single
     line. **Default:** `60` for legacy compatibility.
-  * `compact` {boolean} Setting this to `false` changes the default indentation
-    to use a line break for each object key instead of lining up multiple
-    properties in one line. It will also break text that is above the
-    `breakLength` size into smaller and better readable chunks and indents
-    objects the same as arrays. Note that no text will be reduced below 16
+  * `compact` {boolean} Setting this to `false` causes each object key to
+    be displayed on a new line. It will also add new lines to text that is
+    longer than `breakLength`. Note that no text will be reduced below 16
     characters, no matter the `breakLength` size. For more information, see the
     example below. **Default:** `true`.
   * `sorted` {boolean|Function} If set to `true` or a function, all properties
-    of an object and Set and Map entries will be sorted in the returned string.
-    If set to `true` the [default sort][] is going to be used. If set to a
-    function, it is used as a [compare function][].
-* Returns: {string} The representation of passed object
+    of an object, and `Set` and `Map` entries are sorted in the resulting
+    string. If set to `true` the [default sort][] is used. If set to a function,
+    it is used as a [compare function][].
+  * `getters` {boolean|string} If set to `true`, getters are inspected. If set
+    to `'get'`, only getters without a corresponding setter are inspected. If
+    set to `'set'`, only getters with a corresponding setter are inspected.
+    This might cause side effects depending on the getter function.
+    **Default:** `false`.
+* Returns: {string} The representation of `object`.
 
 The `util.inspect()` method returns a string representation of `object` that is
 intended for debugging. The output of `util.inspect` may change at any time
 and should not be depended upon programmatically. Additional `options` may be
-passed that alter certain aspects of the formatted string.
+passed that alter the result.
 `util.inspect()` will use the constructor's name and/or `@@toStringTag` to make
 an identifiable tag for an inspected value.
 
@@ -466,7 +504,7 @@ const util = require('util');
 console.log(util.inspect(util, { showHidden: true, depth: null }));
 ```
 
-The following example highlights the difference with the `compact` option:
+The following example highlights the effect of the `compact` option:
 
 ```js
 const util = require('util');
@@ -523,13 +561,11 @@ console.log(util.inspect(o, { compact: false, depth: 5, breakLength: 80 }));
 // chunks.
 ```
 
-Using the `showHidden` option allows to inspect [`WeakMap`][] and [`WeakSet`][]
-entries. If there are more entries than `maxArrayLength`, there is no guarantee
-which entries are displayed. That means retrieving the same [`WeakSet`][]
-entries twice might actually result in a different output. Besides this any item
-might be collected at any point of time by the garbage collector if there is no
-strong reference left to that object. Therefore there is no guarantee to get a
-reliable output.
+The `showHidden` option allows [`WeakMap`][] and [`WeakSet`][] entries to be
+inspected. If there are more entries than `maxArrayLength`, there is no
+guarantee which entries are displayed. That means retrieving the same
+[`WeakSet`][] entries twice may result in different output. Furthermore, entries
+with no remaining strong references may be garbage collected at any time.
 
 ```js
 const { inspect } = require('util');
@@ -542,8 +578,8 @@ console.log(inspect(weakSet, { showHidden: true }));
 // WeakSet { { a: 1 }, { b: 2 } }
 ```
 
-The `sorted` option makes sure the output is identical, no matter of the
-properties insertion order:
+The `sorted` option ensures that an object's property insertion order does not
+impact the result of `util.inspect()`.
 
 ```js
 const { inspect } = require('util');
@@ -570,11 +606,9 @@ assert.strict.equal(
 );
 ```
 
-Please note that `util.inspect()` is a synchronous method that is mainly
-intended as a debugging tool. Its maximum output length is limited to
-approximately 128 MB and input values that result in output bigger than that
-will not be inspected fully. Such values can have a significant performance
-overhead that can block the event loop for a significant amount of time.
+`util.inspect()` is a synchronous method intended for debugging. Its maximum
+output length is approximately 128 MB. Inputs that result in longer output will
+be truncated.
 
 ### Customizing `util.inspect` colors
 
@@ -665,7 +699,7 @@ util.inspect(obj);
 <!-- YAML
 added: v6.6.0
 changes:
-  - version: REPLACEME
+  - version: v10.12.0
     pr-url: https://github.com/nodejs/node/pull/20857
     description: This is now defined as a shared symbol.
 -->
@@ -916,8 +950,8 @@ is not supported.
 <!-- YAML
 added: v8.3.0
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v11.0.0
+    pr-url: v11.0.0
     description: The class is now available on the global object.
 -->
 
@@ -977,8 +1011,8 @@ mark.
 <!-- YAML
 added: v8.3.0
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v11.0.0
+    pr-url: v11.0.0
     description: The class is now available on the global object.
 -->
 
@@ -1680,30 +1714,6 @@ Node.js modules. The community found and used it anyway.
 It is deprecated and should not be used in new code. JavaScript comes with very
 similar built-in functionality through [`Object.assign()`].
 
-### util.debug(string)
-<!-- YAML
-added: v0.3.0
-deprecated: v0.11.3
--->
-
-> Stability: 0 - Deprecated: Use [`console.error()`][] instead.
-
-* `string` {string} The message to print to `stderr`
-
-Deprecated predecessor of `console.error`.
-
-### util.error([...strings])
-<!-- YAML
-added: v0.3.0
-deprecated: v0.11.3
--->
-
-> Stability: 0 - Deprecated: Use [`console.error()`][] instead.
-
-* `...strings` {string} The message to print to `stderr`
-
-Deprecated predecessor of `console.error`.
-
 ### util.isArray(object)
 <!-- YAML
 added: v0.6.0
@@ -2133,43 +2143,20 @@ const util = require('util');
 util.log('Timestamped message.');
 ```
 
-### util.print([...strings])
-<!-- YAML
-added: v0.3.0
-deprecated: v0.11.3
--->
-
-> Stability: 0 - Deprecated: Use [`console.log()`][] instead.
-
-Deprecated predecessor of `console.log`.
-
-### util.puts([...strings])
-<!-- YAML
-added: v0.3.0
-deprecated: v0.11.3
--->
-
-> Stability: 0 - Deprecated: Use [`console.log()`][] instead.
-
-Deprecated predecessor of `console.log`.
-
 [`'uncaughtException'`]: process.html#process_event_uncaughtexception
 [`'warning'`]: process.html#process_event_warning
 [`Array.isArray()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/isArray
-[`ArrayBuffer`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer
 [`ArrayBuffer.isView()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer/isView
-[`assert.deepStrictEqual()`]: assert.html#assert_assert_deepstrictequal_actual_expected_message
+[`ArrayBuffer`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer
 [`Buffer.isBuffer()`]: buffer.html#buffer_class_method_buffer_isbuffer_obj
-[`console.error()`]: console.html#console_console_error_data_args
-[`console.log()`]: console.html#console_console_log_data_args
 [`DataView`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView
 [`Date`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date
 [`Error`]: errors.html#errors_class_error
 [`Float32Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float32Array
 [`Float64Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float64Array
-[`Int8Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int8Array
 [`Int16Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int16Array
 [`Int32Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int32Array
+[`Int8Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int8Array
 [`Map`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map
 [`Object.assign()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/assign
 [`Promise`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise
@@ -2177,6 +2164,16 @@ Deprecated predecessor of `console.log`.
 [`Set`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set
 [`SharedArrayBuffer`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer
 [`TypedArray`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypedArray
+[`Uint16Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint16Array
+[`Uint32Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint32Array
+[`Uint8Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array
+[`Uint8ClampedArray`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8ClampedArray
+[`WeakMap`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakMap
+[`WeakSet`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakSet
+[`WebAssembly.Module`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WebAssembly/Module
+[`assert.deepStrictEqual()`]: assert.html#assert_assert_deepstrictequal_actual_expected_message
+[`console.error()`]: console.html#console_console_error_data_args
+[`target` and `handler`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy#Terminology
 [`util.format()`]: #util_util_format_format_args
 [`util.inspect()`]: #util_util_inspect_object_options
 [`util.promisify()`]: #util_util_promisify_original
@@ -2185,20 +2182,13 @@ Deprecated predecessor of `console.log`.
 [`util.types.isDate()`]: #util_util_types_isdate_value
 [`util.types.isNativeError()`]: #util_util_types_isnativeerror_value
 [`util.types.isSharedArrayBuffer()`]: #util_util_types_issharedarraybuffer_value
-[`Uint8Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array
-[`Uint8ClampedArray`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8ClampedArray
-[`Uint16Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint16Array
-[`Uint32Array`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint32Array
-[`WeakMap`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakMap
-[`WeakSet`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakSet
-[`WebAssembly.Module`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WebAssembly/Module
+[Common System Errors]: errors.html#errors_common_system_errors
 [Custom inspection functions on Objects]: #util_custom_inspection_functions_on_objects
 [Custom promisified functions]: #util_custom_promisified_functions
 [Customizing `util.inspect` colors]: #util_customizing_util_inspect_colors
 [Internationalization]: intl.html
 [Module Namespace Object]: https://tc39.github.io/ecma262/#sec-module-namespace-exotic-objects
 [WHATWG Encoding Standard]: https://encoding.spec.whatwg.org/
-[Common System Errors]: errors.html#errors_common_system_errors
 [async function]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function
 [compare function]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort#Parameters
 [constructor]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/constructor

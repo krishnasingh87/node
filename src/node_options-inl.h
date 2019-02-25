@@ -14,7 +14,11 @@ PerIsolateOptions* PerProcessOptions::get_per_isolate_options() {
 }
 
 DebugOptions* EnvironmentOptions::get_debug_options() {
-  return debug_options.get();
+  return &debug_options_;
+}
+
+const DebugOptions& EnvironmentOptions::debug_options() const {
+  return debug_options_;
 }
 
 EnvironmentOptions* PerIsolateOptions::get_per_env_options() {
@@ -33,6 +37,19 @@ void OptionsParser<Options>::AddOption(const std::string& name,
                               std::make_shared<SimpleOptionField<bool>>(field),
                               env_setting,
                               help_text});
+}
+
+template <typename Options>
+void OptionsParser<Options>::AddOption(const std::string& name,
+                                       const std::string& help_text,
+                                       uint64_t Options::* field,
+                                       OptionEnvvarSettings env_setting) {
+  options_.emplace(
+      name,
+      OptionInfo{kUInteger,
+                 std::make_shared<SimpleOptionField<uint64_t>>(field),
+                 env_setting,
+                 help_text});
 }
 
 template <typename Options>
@@ -131,7 +148,7 @@ void OptionsParser<Options>::Implies(const std::string& from,
   CHECK_NE(it, options_.end());
   CHECK_EQ(it->second.type, kBoolean);
   implications_.emplace(from, Implication {
-    std::static_pointer_cast<OptionField<bool>>(it->second.field), true
+    it->second.field, true
   });
 }
 
@@ -142,7 +159,7 @@ void OptionsParser<Options>::ImpliesNot(const std::string& from,
   CHECK_NE(it, options_.end());
   CHECK_EQ(it->second.type, kBoolean);
   implications_.emplace(from, Implication {
-    std::static_pointer_cast<OptionField<bool>>(it->second.field), false
+    it->second.field, false
   });
 }
 
@@ -188,8 +205,7 @@ auto OptionsParser<Options>::Convert(
     typename OptionsParser<ChildOptions>::Implication original,
     ChildOptions* (Options::* get_child)()) {
   return Implication {
-    std::static_pointer_cast<OptionField<bool>>(
-        Convert(original.target_field, get_child)),
+    Convert(original.target_field, get_child),
     original.target_value
   };
 }
@@ -197,7 +213,7 @@ auto OptionsParser<Options>::Convert(
 template <typename Options>
 template <typename ChildOptions>
 void OptionsParser<Options>::Insert(
-    OptionsParser<ChildOptions>* child_options_parser,
+    const OptionsParser<ChildOptions>* child_options_parser,
     ChildOptions* (Options::* get_child)()) {
   aliases_.insert(child_options_parser->aliases_.begin(),
                   child_options_parser->aliases_.end());
@@ -253,7 +269,7 @@ struct ArgsInfo {
       // on the command line (i.e. not generated through alias expansion).
       // '--' is a special case here since its purpose is to end `exec_argv`,
       // which is why we do not include it.
-      if (exec_args != nullptr && first() != "--")
+      if (exec_args != nullptr && ret != "--")
         exec_args->push_back(ret);
       underlying->erase(underlying->begin() + 1);
     } else {
@@ -270,7 +286,7 @@ void OptionsParser<Options>::Parse(
     std::vector<std::string>* const v8_args,
     Options* const options,
     OptionEnvvarSettings required_env_settings,
-    std::vector<std::string>* const errors) {
+    std::vector<std::string>* const errors) const {
   ArgsInfo args(orig_args, exec_args);
 
   // The first entry is the process name. Make sure it ends up in the V8 argv,
@@ -361,8 +377,10 @@ void OptionsParser<Options>::Parse(
 
     {
       auto implications = implications_.equal_range(name);
-      for (auto it = implications.first; it != implications.second; ++it)
-        *it->second.target_field->Lookup(options) = it->second.target_value;
+      for (auto it = implications.first; it != implications.second; ++it) {
+        *it->second.target_field->template Lookup<bool>(options) =
+            it->second.target_value;
+      }
     }
 
     const OptionInfo& info = it->second;
@@ -396,6 +414,9 @@ void OptionsParser<Options>::Parse(
         break;
       case kInteger:
         *Lookup<int64_t>(info.field, options) = std::atoll(value.c_str());
+        break;
+      case kUInteger:
+        *Lookup<uint64_t>(info.field, options) = std::stoull(value.c_str());
         break;
       case kString:
         *Lookup<std::string>(info.field, options) = value;

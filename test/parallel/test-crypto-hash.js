@@ -111,6 +111,28 @@ assert.throws(function() {
   crypto.createHash('xyzzy');
 }, /Digest method not supported/);
 
+// Issue https://github.com/nodejs/node/issues/9819: throwing encoding used to
+// segfault.
+common.expectsError(
+  () => crypto.createHash('sha256').digest({
+    toString: () => { throw new Error('boom'); },
+  }),
+  {
+    type: Error,
+    message: 'boom'
+  });
+
+// Issue https://github.com/nodejs/node/issues/25487: error message for invalid
+// arg type to update method should include all possible types
+common.expectsError(
+  () => crypto.createHash('sha256').update(),
+  {
+    code: 'ERR_INVALID_ARG_TYPE',
+    type: TypeError,
+    message: 'The "data" argument must be one of type string, Buffer, ' +
+      'TypedArray, or DataView. Received type undefined'
+  });
+
 // Default UTF-8 encoding
 const hutf8 = crypto.createHash('sha512').update('УТФ-8 text').digest('hex');
 assert.strictEqual(

@@ -48,7 +48,7 @@ static void MakeUtf8String(Isolate* isolate,
   const int flags =
       String::NO_NULL_TERMINATION | String::REPLACE_INVALID_UTF8;
   const int length =
-      string->WriteUtf8(isolate, target->out(), storage, 0, flags);
+      string->WriteUtf8(isolate, target->out(), storage, nullptr, flags);
   target->SetLengthAndZeroTerminate(length);
 }
 
@@ -101,8 +101,8 @@ BufferValue::BufferValue(Isolate* isolate, Local<Value> value) {
 }
 
 void LowMemoryNotification() {
-  if (v8_initialized) {
-    auto isolate = v8::Isolate::GetCurrent();
+  if (per_process::v8_initialized) {
+    auto isolate = Isolate::GetCurrent();
     if (isolate != nullptr) {
       isolate->LowMemoryNotification();
     }
@@ -116,25 +116,26 @@ std::string GetHumanReadableProcessName() {
 }
 
 void GetHumanReadableProcessName(char (*name)[1024]) {
-  char title[1024] = "Node.js";
+  // Leave room after title for pid, which can be up to 20 digits for 64 bit.
+  char title[1000] = "Node.js";
   uv_get_process_title(title, sizeof(title));
   snprintf(*name, sizeof(*name), "%s[%d]", title, uv_os_getpid());
 }
 
-std::set<std::string> ParseCommaSeparatedSet(const std::string& in) {
-  std::set<std::string> out;
+std::vector<std::string> SplitString(const std::string& in, char delim) {
+  std::vector<std::string> out;
   if (in.empty())
     return out;
   std::istringstream in_stream(in);
   while (in_stream.good()) {
     std::string item;
-    getline(in_stream, item, ',');
-    out.emplace(std::move(item));
+    std::getline(in_stream, item, delim);
+    out.emplace_back(std::move(item));
   }
   return out;
 }
 
-void ThrowErrStringTooLong(v8::Isolate* isolate) {
+void ThrowErrStringTooLong(Isolate* isolate) {
   isolate->ThrowException(ERR_STRING_TOO_LONG(isolate));
 }
 

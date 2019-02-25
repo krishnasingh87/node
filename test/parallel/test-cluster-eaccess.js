@@ -45,16 +45,16 @@ if (cluster.isMaster && process.argv.length !== 3) {
   worker.on('online', common.mustCall());
 
   worker.on('message', common.mustCall(function(err) {
-    // disconnect first, so that we will not leave zombies
+    // Disconnect first, so that we will not leave zombies
     worker.disconnect();
-    assert.strictEqual('EADDRINUSE', err.code);
+    assert.strictEqual(err.code, 'EADDRINUSE');
   }));
 } else if (process.argv.length !== 3) {
   // cluster.worker
   const PIPE_NAME = process.env.PIPE_NAME;
   const cp = fork(__filename, [PIPE_NAME], { stdio: 'inherit' });
 
-  // message from the child indicates it's ready and listening
+  // Message from the child indicates it's ready and listening
   cp.on('message', common.mustCall(function() {
     const server = net.createServer().listen(PIPE_NAME, function() {
       // message child process so that it can exit

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
 import ast
 import errno
 import os
@@ -25,11 +26,11 @@ def load_config():
 def try_unlink(path):
   try:
     os.unlink(path)
-  except OSError, e:
+  except OSError as e:
     if e.errno != errno.ENOENT: raise
 
 def try_symlink(source_path, link_path):
-  print 'symlinking %s -> %s' % (source_path, link_path)
+  print('symlinking %s -> %s' % (source_path, link_path))
   try_unlink(link_path)
   try_mkdir_r(os.path.dirname(link_path))
   os.symlink(source_path, link_path)
@@ -37,7 +38,7 @@ def try_symlink(source_path, link_path):
 def try_mkdir_r(path):
   try:
     os.makedirs(path)
-  except OSError, e:
+  except OSError as e:
     if e.errno != errno.EEXIST: raise
 
 def try_rmdir_r(path):
@@ -45,7 +46,7 @@ def try_rmdir_r(path):
   while path.startswith(install_path):
     try:
       os.rmdir(path)
-    except OSError, e:
+    except OSError as e:
       if e.errno == errno.ENOTEMPTY: return
       if e.errno == errno.ENOENT: return
       raise
@@ -60,19 +61,24 @@ def mkpaths(path, dst):
 
 def try_copy(path, dst):
   source_path, target_path = mkpaths(path, dst)
-  print 'installing %s' % target_path
+  print('installing %s' % target_path)
   try_mkdir_r(os.path.dirname(target_path))
   try_unlink(target_path) # prevent ETXTBSY errors
   return shutil.copy2(source_path, target_path)
 
 def try_remove(path, dst):
   source_path, target_path = mkpaths(path, dst)
-  print 'removing %s' % target_path
+  print('removing %s' % target_path)
   try_unlink(target_path)
   try_rmdir_r(os.path.dirname(target_path))
 
-def install(paths, dst): map(lambda path: try_copy(path, dst), paths)
-def uninstall(paths, dst): map(lambda path: try_remove(path, dst), paths)
+def install(paths, dst):
+  for path in paths:
+    try_copy(path, dst)
+
+def uninstall(paths, dst):
+  for path in paths:
+    try_remove(path, dst)
 
 def npm_files(action):
   target_path = 'lib/node_modules/npm/'
@@ -84,7 +90,7 @@ def npm_files(action):
   # npm has a *lot* of files and it'd be a pain to maintain a fixed list here
   # so we walk its source directory instead...
   for dirname, subdirs, basenames in os.walk('deps/npm', topdown=True):
-    subdirs[:] = filter('test'.__ne__, subdirs) # skip test suites
+    subdirs[:] = [subdir for subdir in subdirs if subdir != 'test']
     paths = [os.path.join(dirname, basename) for basename in basenames]
     action(paths, target_path + dirname[9:] + '/')
 
@@ -161,7 +167,7 @@ def headers(action):
       'deps/v8/include/v8-inspector.h',
       'deps/v8/include/v8-inspector-protocol.h'
     ]
-    files = filter(lambda name: name not in inspector_headers, files)
+    files = [name for name in files if name not in inspector_headers]
     action(files, dest)
 
   action([
@@ -169,6 +175,8 @@ def headers(action):
     'config.gypi',
     'src/node.h',
     'src/node_api.h',
+    'src/js_native_api.h',
+    'src/js_native_api_types.h',
     'src/node_api_types.h',
     'src/node_buffer.h',
     'src/node_object_wrap.h',

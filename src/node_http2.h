@@ -3,7 +3,10 @@
 
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
+// FIXME(joyeecheung): nghttp2.h needs stdint.h to compile on Windows
+#include <stdint.h>
 #include "nghttp2/nghttp2.h"
+
 #include "node_http2_state.h"
 #include "node_perf.h"
 #include "stream_base-inl.h"
@@ -92,6 +95,8 @@ struct nghttp2_stream_write : public MemoryRetainer {
       req_wrap(req), buf(buf_) {}
 
   void MemoryInfo(MemoryTracker* tracker) const override;
+  SET_MEMORY_INFO_NAME(nghttp2_stream_write)
+  SET_SELF_SIZE(nghttp2_stream_write)
 };
 
 struct nghttp2_header : public MemoryRetainer {
@@ -100,6 +105,8 @@ struct nghttp2_header : public MemoryRetainer {
   uint8_t flags = 0;
 
   void MemoryInfo(MemoryTracker* tracker) const override;
+  SET_MEMORY_INFO_NAME(nghttp2_header)
+  SET_SELF_SIZE(nghttp2_header)
 };
 
 
@@ -156,6 +163,7 @@ struct nghttp2_header : public MemoryRetainer {
   V(AUTHORITY, ":authority")                                                  \
   V(SCHEME, ":scheme")                                                        \
   V(PATH, ":path")                                                            \
+  V(PROTOCOL, ":protocol")                                                    \
   V(ACCEPT_CHARSET, "accept-charset")                                         \
   V(ACCEPT_ENCODING, "accept-encoding")                                       \
   V(ACCEPT_LANGUAGE, "accept-language")                                       \
@@ -228,11 +236,11 @@ struct nghttp2_header : public MemoryRetainer {
   V(PROXY_CONNECTION, "proxy-connection")
 
 enum http_known_headers {
-HTTP_KNOWN_HEADER_MIN,
+  HTTP_KNOWN_HEADER_MIN,
 #define V(name, value) HTTP_HEADER_##name,
-HTTP_KNOWN_HEADERS(V)
+  HTTP_KNOWN_HEADERS(V)
 #undef V
-HTTP_KNOWN_HEADER_MAX
+  HTTP_KNOWN_HEADER_MAX
 };
 
 // While some of these codes are used within the HTTP/2 implementation in
@@ -305,7 +313,7 @@ HTTP_KNOWN_HEADER_MAX
 
 enum http_status_codes {
 #define V(name, code) HTTP_STATUS_##name = code,
-HTTP_STATUS_CODES(V)
+  HTTP_STATUS_CODES(V)
 #undef V
 };
 
@@ -334,9 +342,6 @@ enum session_state_flags {
   SESSION_STATE_CLOSING = 0x8,
   SESSION_STATE_SENDING = 0x10,
 };
-
-// This allows for 4 default-sized frames with their frame headers
-static const size_t kAllocBufferSize = 4 * (16384 + 9);
 
 typedef uint32_t(*get_setting)(nghttp2_session* session,
                                nghttp2_settings_id id);
@@ -383,7 +388,7 @@ class Http2Options {
   }
 
   void SetPaddingStrategy(padding_strategy_type val) {
-    padding_strategy_ = static_cast<padding_strategy_type>(val);
+    padding_strategy_ = val;
   }
 
   padding_strategy_type GetPaddingStrategy() const {
@@ -446,10 +451,11 @@ class Http2StreamListener : public StreamListener {
 class Http2Stream : public AsyncWrap,
                     public StreamBase {
  public:
-  Http2Stream(Http2Session* session,
-              int32_t id,
-              nghttp2_headers_category category = NGHTTP2_HCAT_HEADERS,
-              int options = 0);
+  static Http2Stream* New(
+      Http2Session* session,
+      int32_t id,
+      nghttp2_headers_category category = NGHTTP2_HCAT_HEADERS,
+      int options = 0);
   ~Http2Stream() override;
 
   nghttp2_stream* operator*();
@@ -458,10 +464,6 @@ class Http2Stream : public AsyncWrap,
   const Http2Session* session() const { return session_; }
 
   void EmitStatistics();
-
-  // Process a Data Chunk
-  void OnDataChunk(uv_buf_t* chunk);
-
 
   // Required for StreamBase
   int ReadStart() override;
@@ -570,12 +572,12 @@ class Http2Stream : public AsyncWrap,
               uv_stream_t* send_handle) override;
 
   void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
     tracker->TrackField("current_headers", current_headers_);
     tracker->TrackField("queue", queue_);
   }
 
-  ADD_MEMORY_INFO_NAME(Http2Stream)
+  SET_MEMORY_INFO_NAME(Http2Stream)
+  SET_SELF_SIZE(Http2Stream)
 
   std::string diagnostic_name() const override;
 
@@ -606,6 +608,12 @@ class Http2Stream : public AsyncWrap,
   Statistics statistics_ = {};
 
  private:
+  Http2Stream(Http2Session* session,
+              v8::Local<v8::Object> obj,
+              int32_t id,
+              nghttp2_headers_category category,
+              int options);
+
   Http2Session* session_ = nullptr;             // The Parent HTTP/2 Session
   int32_t id_ = 0;                              // The Stream Identifier
   int32_t code_ = NGHTTP2_NO_ERROR;             // The RST_STREAM code (if any)
@@ -688,12 +696,9 @@ class Http2Session : public AsyncWrap, public StreamListener {
     return static_cast<StreamBase*>(stream_);
   }
 
-  void Start();
-  void Stop();
   void Close(uint32_t code = NGHTTP2_NO_ERROR,
              bool socket_closed = false);
   void Consume(Local<External> external);
-  void Unconsume();
   void Goaway(uint32_t code, int32_t lastStreamID, uint8_t* data, size_t len);
   void AltSvc(int32_t id,
               uint8_t* origin,
@@ -701,9 +706,6 @@ class Http2Session : public AsyncWrap, public StreamListener {
               uint8_t* value,
               size_t value_len);
   void Origin(nghttp2_origin_entry* ov, size_t count);
-
-
-  bool Ping(v8::Local<v8::Function> function);
 
   uint8_t SendPendingData();
 
@@ -755,7 +757,6 @@ class Http2Session : public AsyncWrap, public StreamListener {
   ssize_t Write(const uv_buf_t* bufs, size_t nbufs);
 
   void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
     tracker->TrackField("streams", streams_);
     tracker->TrackField("outstanding_pings", outstanding_pings_);
     tracker->TrackField("outstanding_settings", outstanding_settings_);
@@ -765,7 +766,8 @@ class Http2Session : public AsyncWrap, public StreamListener {
                                 pending_rst_streams_.size() * sizeof(int32_t));
   }
 
-  ADD_MEMORY_INFO_NAME(Http2Session)
+  SET_MEMORY_INFO_NAME(Http2Session)
+  SET_SELF_SIZE(Http2Session)
 
   std::string diagnostic_name() const override;
 
@@ -781,14 +783,13 @@ class Http2Session : public AsyncWrap, public StreamListener {
   }
 
   // Handle reads/writes from the underlying network transport.
+  uv_buf_t OnStreamAlloc(size_t suggested_size) override;
   void OnStreamRead(ssize_t nread, const uv_buf_t& buf) override;
   void OnStreamAfterWrite(WriteWrap* w, int status) override;
 
   // The JavaScript API
   static void New(const FunctionCallbackInfo<Value>& args);
   static void Consume(const FunctionCallbackInfo<Value>& args);
-  static void Unconsume(const FunctionCallbackInfo<Value>& args);
-  static void Destroying(const FunctionCallbackInfo<Value>& args);
   static void Destroy(const FunctionCallbackInfo<Value>& args);
   static void Settings(const FunctionCallbackInfo<Value>& args);
   static void Request(const FunctionCallbackInfo<Value>& args);
@@ -802,9 +803,6 @@ class Http2Session : public AsyncWrap, public StreamListener {
 
   template <get_setting fn>
   static void RefreshSettings(const FunctionCallbackInfo<Value>& args);
-
-  template <get_setting fn>
-  static void GetSettings(const FunctionCallbackInfo<Value>& args);
 
   uv_loop_t* event_loop() const {
     return env()->event_loop();
@@ -1082,14 +1080,14 @@ class Http2StreamPerformanceEntry : public PerformanceEntry {
 
 class Http2Session::Http2Ping : public AsyncWrap {
  public:
-  explicit Http2Ping(Http2Session* session);
+  explicit Http2Ping(Http2Session* session, v8::Local<v8::Object> obj);
 
   void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
     tracker->TrackField("session", session_);
   }
 
-  ADD_MEMORY_INFO_NAME(Http2Ping)
+  SET_MEMORY_INFO_NAME(Http2Ping)
+  SET_SELF_SIZE(Http2Ping)
 
   void Send(uint8_t* payload);
   void Done(bool ack, const uint8_t* payload = nullptr);
@@ -1106,15 +1104,17 @@ class Http2Session::Http2Ping : public AsyncWrap {
 // structs.
 class Http2Session::Http2Settings : public AsyncWrap {
  public:
-  explicit Http2Settings(Environment* env);
-  explicit Http2Settings(Http2Session* session);
+  Http2Settings(Environment* env,
+                Http2Session* session,
+                v8::Local<v8::Object> obj,
+                uint64_t start_time = uv_hrtime());
 
   void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackThis(this);
     tracker->TrackField("session", session_);
   }
 
-  ADD_MEMORY_INFO_NAME(Http2Settings)
+  SET_MEMORY_INFO_NAME(Http2Settings)
+  SET_SELF_SIZE(Http2Settings)
 
   void Send();
   void Done(bool ack);

@@ -7,19 +7,57 @@
     'v8_code': 1,
     'v8_random_seed%': 314159265,
     'v8_vector_stores%': 0,
-    'embed_script%': "",
-    'warmup_script%': "",
+    'v8_embed_script%': "",
     'v8_extra_library_files%': [],
     'v8_experimental_extra_library_files%': [],
     'mksnapshot_exec': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mksnapshot<(EXECUTABLE_SUFFIX)',
     'v8_os_page_size%': 0,
+    'generate_bytecode_builtins_list_output' : '<(SHARED_INTERMEDIATE_DIR)/builtins-generated/bytecodes-builtins-list.h',
+    'torque_files': [
+      "../src/builtins/base.tq",
+      "../src/builtins/array.tq",
+      "../src/builtins/array-copywithin.tq",
+      "../src/builtins/array-foreach.tq",
+      "../src/builtins/array-lastindexof.tq",
+      "../src/builtins/array-reverse.tq",
+      "../src/builtins/array-splice.tq",
+      "../src/builtins/array-unshift.tq",
+      "../src/builtins/typed-array.tq",
+      "../src/builtins/data-view.tq",
+      "../third_party/v8/builtins/array-sort.tq",
+    ],
+    'torque_modules': [
+      "base",
+      "array",
+      "typed-array",
+      "data-view",
+    ],
+    # Since there is no foreach in GYP we manualy unroll the following:
+    # foreach(module, torque_modules) {
+    #   outputs += [
+    #     "$target_gen_dir/torque-generated/builtins-$module-from-dsl-gen.cc",
+    #     "$target_gen_dir/torque-generated/builtins-$module-from-dsl-gen.h",
+    #   ]
+    # }
+    'torque_outputs': [
+      '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-base-from-dsl-gen.cc',
+      '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-base-from-dsl-gen.h',
+      '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-array-from-dsl-gen.cc',
+      '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-array-from-dsl-gen.h',
+      '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-typed-array-from-dsl-gen.cc',
+      '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-typed-array-from-dsl-gen.h',
+      '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-data-view-from-dsl-gen.cc',
+      '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-data-view-from-dsl-gen.h',
+    ],
+    'torque_generated_pure_headers': [
+      '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtin-definitions-from-dsl.h',
+    ],
   },
-  'includes': ['toolchain.gypi', 'features.gypi', 'inspector.gypi'],
+  'includes': ['toolchain.gypi', 'features.gypi'],
   'targets': [
     {
       'target_name': 'v8',
-      'dependencies_traverse': 1,
-      'dependencies': ['v8_maybe_snapshot', 'v8_dump_build_config#target'],
+      'dependencies': [ 'v8_maybe_snapshot' ],
       'conditions': [
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
@@ -60,11 +98,56 @@
         }],
       ],
       'direct_dependent_settings': {
-        'include_dirs': [
-          '../include/',
-        ],
+        'include_dirs': [ '../include/', ],
       },
-    },
+      'actions': [
+        {
+          'action_name': 'v8_dump_build_config',
+          'toolsets': ['target'],
+          'inputs': [
+            '../tools/testrunner/utils/dump_build_config_gyp.py',
+          ],
+          'outputs': [
+            '<(PRODUCT_DIR)/v8_build_config.json',
+          ],
+          'variables': {
+            'v8_dump_build_config_args': [
+              '<(PRODUCT_DIR)/v8_build_config.json',
+              'dcheck_always_on=<(dcheck_always_on)',
+              'is_android=<(is_android)',
+              'is_asan=<(asan)',
+              'is_cfi=<(cfi_vptr)',
+              'is_component_build=<(component)',
+              'is_debug=<(CONFIGURATION_NAME)',
+              # Not available in gyp.
+              'is_gcov_coverage=0',
+              'is_msan=<(msan)',
+              'is_tsan=<(tsan)',
+              # Not available in gyp.
+              'is_ubsan_vptr=0',
+              'target_cpu=<(target_arch)',
+              'v8_enable_i18n_support=<(v8_enable_i18n_support)',
+              'v8_enable_verify_predictable=<(v8_enable_verify_predictable)',
+              'v8_target_cpu=<(v8_target_arch)',
+              'v8_use_snapshot=<(v8_use_snapshot)',
+            ]
+          },
+          'conditions': [
+            ['v8_target_arch=="mips" or v8_target_arch=="mipsel" \
+              or v8_target_arch=="mips64" or v8_target_arch=="mips64el"', {
+              'v8_dump_build_config_args':[
+                'mips_arch_variant=<(mips_arch_variant)',
+                'mips_use_msa=<(mips_use_msa)',
+              ],
+            }],
+          ],
+          'action': [
+            'python', '../tools/testrunner/utils/dump_build_config_gyp.py',
+            '<@(v8_dump_build_config_args)',
+          ],
+        },
+      ],
+    }, # v8
     {
       # This rule delegates to either v8_snapshot, v8_nosnapshot, or
       # v8_external_snapshot, depending on the current variables.
@@ -86,21 +169,9 @@
         }],
         ['v8_use_snapshot=="true" and v8_use_external_startup_data==1 and want_separate_host_toolset==0', {
           'dependencies': ['v8_base', 'v8_external_snapshot'],
-          'inputs': [ '<(PRODUCT_DIR)/snapshot_blob.bin', ],
         }],
         ['v8_use_snapshot=="true" and v8_use_external_startup_data==1 and want_separate_host_toolset==1', {
           'dependencies': ['v8_base', 'v8_external_snapshot'],
-          'target_conditions': [
-            ['_toolset=="host"', {
-              'inputs': [
-                '<(PRODUCT_DIR)/snapshot_blob_host.bin',
-              ],
-            }, {
-              'inputs': [
-                '<(PRODUCT_DIR)/snapshot_blob.bin',
-              ],
-            }],
-          ],
         }],
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
@@ -108,24 +179,28 @@
           'toolsets': ['target'],
         }],
       ]
-    },
+    }, # v8_maybe_snapshot
     {
       'target_name': 'v8_init',
       'type': 'static_library',
       'dependencies': [
         'v8_initializers',
-        'v8_torque#host',
+        # We need this transitive dependency, since it also does codegen.
+        'v8_base',
       ],
       'variables': {
         'optimize': 'max',
       },
-      'include_dirs+': [
+      'include_dirs': [
         '..',
         '../include/',
+        # This is for `gen/builtins-generated`
+        '<(SHARED_INTERMEDIATE_DIR)',
       ],
       'sources': [
         '../src/setup-isolate-full.cc',
-        '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtin-definitions-from-dsl.h',
+        '<(generate_bytecode_builtins_list_output)',
+        '<@(torque_generated_pure_headers)',
       ],
       'conditions': [
         ['want_separate_host_toolset==1', {
@@ -140,18 +215,17 @@
           ],
         }],
       ],
-    },
+    }, # v8_init
     {
       'target_name': 'v8_initializers',
       'type': 'static_library',
       'dependencies': [
         'v8_base',
-        'v8_torque#host',
       ],
-       'variables': {
+      'variables': {
         'optimize': 'max',
       },
-      'include_dirs+': [
+      'include_dirs': [
         '..',
         '../include/',
       ],
@@ -224,16 +298,8 @@
         '../src/interpreter/interpreter-generator.h',
         '../src/interpreter/interpreter-intrinsics-generator.cc',
         '../src/interpreter/interpreter-intrinsics-generator.h',
-        '../src/interpreter/setup-interpreter-internal.cc',
-        '../src/interpreter/setup-interpreter.h',
-        '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-array-from-dsl-gen.cc',
-        '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-array-from-dsl-gen.h',
-        '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-base-from-dsl-gen.cc',
-        '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-base-from-dsl-gen.h',
-        '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-typed-array-from-dsl-gen.cc',
-        '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-typed-array-from-dsl-gen.h',
-        '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-data-view-from-dsl-gen.cc',
-        '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-data-view-from-dsl-gen.h',
+        '<@(torque_outputs)',
+        '<@(torque_generated_pure_headers)',
       ],
       'conditions': [
         ['want_separate_host_toolset==1', {
@@ -291,8 +357,24 @@
             '../src/builtins/builtins-intl-gen.cc',
           ],
         }],
+        # Platforms that don't have Compare-And-Swap support need to link atomic
+        # library to implement atomic memory access
+        [ 'v8_current_cpu in ["mips", "mipsel", "mips64", "mips64el", "ppc", "ppc64", "s390", "s390x"]', {
+            'link_settings': {
+              'libraries': [ '-latomic', ],
+            },
+          },
+        ],
+        ['OS=="win"', {
+          'msvs_precompiled_header': '../../../tools/msvs/pch/v8_pch.h',
+          'msvs_precompiled_source': '../../../tools/msvs/pch/v8_pch.cc',
+          'sources': [
+            '<(_msvs_precompiled_header)',
+            '<(_msvs_precompiled_source)',
+           ],
+        }],
       ],
-    },
+    }, # v8_initializers
     {
       'target_name': 'v8_snapshot',
       'type': 'static_library',
@@ -331,7 +413,7 @@
       'dependencies': [
         'v8_base',
       ],
-      'include_dirs+': [
+      'include_dirs': [
         '..',
         '<(DEPTH)',
       ],
@@ -339,60 +421,75 @@
         '<(SHARED_INTERMEDIATE_DIR)/experimental-extras-libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
-        '<(INTERMEDIATE_DIR)/snapshot.cc',
         '../src/setup-isolate-deserialize.cc',
-        '../src/snapshot/embedded-empty.cc',
       ],
       'actions': [
         {
           'action_name': 'run_mksnapshot',
+          'message': 'generating: >@(_outputs)',
+          'variables': {
+            'mksnapshot_flags': [ '--turbo_instruction_scheduling', ],
+          },
+          'conditions': [
+            ['v8_enable_embedded_builtins == "true"', {
+              # In this case we use `embedded_variant "Default"`
+              # and `suffix = ''` for the template `embedded${suffix}.cc`.
+              'outputs': [ '<(INTERMEDIATE_DIR)/embedded.cc' ],
+              'variables': {
+                'mksnapshot_flags':  [
+                  '--embedded_src', '<(INTERMEDIATE_DIR)/embedded.cc',
+                  '--embedded_variant', 'Default',
+                ],
+              },
+            }, {
+               'outputs': [ '../src/snapshot/embedded-empty.cc' ]
+            }],
+            ['v8_random_seed != 0', {
+              'variables': {
+                'mksnapshot_flags': [ '--random-seed', '<(v8_random_seed)' ],
+              },
+            }],
+            ['v8_os_page_size != 0', {
+              'variables': {
+                'mksnapshot_flags': [ '--v8_os_page_size', '<(v8_os_page_size)' ],
+              },
+            }],
+            ['v8_use_external_startup_data !=0 ', {
+              'outputs': [ '<(INTERMEDIATE_DIR)/snapshot_blob.bin', ],
+              'variables': {
+                'mksnapshot_flags': [ '--startup_blob', '<(INTERMEDIATE_DIR)/snapshot_blob.bin', ],
+              },
+            }, {
+               'outputs': [ "<(INTERMEDIATE_DIR)/snapshot.cc" ],
+               'variables': {
+                 'mksnapshot_flags': [ '--startup_src', '<(INTERMEDIATE_DIR)/snapshot.cc', ],
+               },
+            }],
+            ['v8_embed_script != ""', {
+              'inputs': [ '<(v8_embed_script)' ],
+              'variables': {
+                'mksnapshot_flags': [ '<(v8_embed_script)' ],
+              },
+            }],
+          ],
           'inputs': [
             '<(mksnapshot_exec)',
           ],
-          'conditions': [
-            ['embed_script!=""', {
-              'inputs': [
-                '<(embed_script)',
-              ],
-            }],
-            ['warmup_script!=""', {
-              'inputs': [
-                '<(warmup_script)',
-              ],
-            }],
-          ],
-          'outputs': [
-            '<(INTERMEDIATE_DIR)/snapshot.cc',
-          ],
-          'variables': {
-            'mksnapshot_flags': [],
-            'conditions': [
-              ['v8_random_seed!=0', {
-                'mksnapshot_flags': ['--random-seed', '<(v8_random_seed)'],
-              }],
-              ['v8_vector_stores!=0', {
-                'mksnapshot_flags': ['--vector-stores'],
-              }],
-            ],
-          },
+          'process_outputs_as_sources': 1,
           'action': [
-            '<(mksnapshot_exec)',
-            '<@(mksnapshot_flags)',
-            '--startup_src', '<@(INTERMEDIATE_DIR)/snapshot.cc',
-            '<(embed_script)',
-            '<(warmup_script)',
+            '>@(_inputs)',
+            '>@(mksnapshot_flags)',
           ],
         },
       ],
-    },
+    }, # v8_snapshot
     {
       'target_name': 'v8_nosnapshot',
       'type': 'static_library',
       'dependencies': [
         'v8_base',
-        'v8_torque#host',
       ],
-      'include_dirs+': [
+      'include_dirs': [
         '..',
         '<(DEPTH)',
       ],
@@ -423,144 +520,29 @@
           ],
         }],
       ]
-    },
-    {
-      'target_name': 'v8_external_snapshot',
-      'type': 'static_library',
-      'conditions': [
-        [ 'v8_use_external_startup_data==1', {
-          'conditions': [
-            ['want_separate_host_toolset==1', {
-              'toolsets': ['host', 'target'],
-              'dependencies': [
-                'mksnapshot#host',
-                'js2c#host',
-                'natives_blob',
-            ]}, {
-              'toolsets': ['target'],
-              'dependencies': [
-                'mksnapshot',
-                'js2c',
-                'natives_blob',
-              ],
-            }],
-            ['component=="shared_library"', {
-              'defines': [
-                'BUILDING_V8_SHARED',
-              ],
-              'direct_dependent_settings': {
-                'defines': [
-                  'USING_V8_SHARED',
-                ],
-              },
-            }],
-          ],
-          'dependencies': [
-            'v8_base',
-          ],
-          'include_dirs+': [
-            '..',
-            '<(DEPTH)',
-          ],
-          'sources': [
-            '../src/setup-isolate-deserialize.cc',
-            '../src/snapshot/embedded-empty.cc',
-            '../src/snapshot/natives-external.cc',
-            '../src/snapshot/snapshot-external.cc',
-          ],
-          'actions': [
-            {
-              'action_name': 'run_mksnapshot (external)',
-              'inputs': [
-                '<(mksnapshot_exec)',
-              ],
-              'variables': {
-                'mksnapshot_flags': [],
-                'conditions': [
-                  ['v8_random_seed!=0', {
-                    'mksnapshot_flags': ['--random-seed', '<(v8_random_seed)'],
-                  }],
-                  ['v8_vector_stores!=0', {
-                    'mksnapshot_flags': ['--vector-stores'],
-                  }],
-                  ['v8_os_page_size!=0', {
-                    'mksnapshot_flags': ['--v8_os_page_size', '<(v8_os_page_size)'],
-                  }],
-                ],
-              },
-              'conditions': [
-                ['embed_script!=""', {
-                  'inputs': [
-                    '<(embed_script)',
-                  ],
-                }],
-                ['warmup_script!=""', {
-                  'inputs': [
-                    '<(warmup_script)',
-                  ],
-                }],
-                ['want_separate_host_toolset==1', {
-                  'target_conditions': [
-                    ['_toolset=="host"', {
-                      'outputs': [
-                        '<(PRODUCT_DIR)/snapshot_blob_host.bin',
-                      ],
-                      'action': [
-                        '<(mksnapshot_exec)',
-                        '<@(mksnapshot_flags)',
-                        '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob_host.bin',
-                        '<(embed_script)',
-                        '<(warmup_script)',
-                      ],
-                    }, {
-                      'outputs': [
-                        '<(PRODUCT_DIR)/snapshot_blob.bin',
-                      ],
-                      'action': [
-                        '<(mksnapshot_exec)',
-                        '<@(mksnapshot_flags)',
-                        '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob.bin',
-                        '<(embed_script)',
-                        '<(warmup_script)',
-                      ],
-                    }],
-                  ],
-                }, {
-                  'outputs': [
-                    '<(PRODUCT_DIR)/snapshot_blob.bin',
-                  ],
-                  'action': [
-                    '<(mksnapshot_exec)',
-                    '<@(mksnapshot_flags)',
-                    '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob.bin',
-                    '<(embed_script)',
-                    '<(warmup_script)',
-                  ],
-                }],
-              ],
-            },
-          ],
-        }],
-      ],
-    },
+    }, # v8_nosnapshot
     {
       'target_name': 'v8_base',
       'type': 'static_library',
+      # Since this target is a static-library, but as a side effect it generates
+      # header files, it needs to be a hard dependency.
+      'hard_dependency': 1,
+      'includes': [ 'inspector.gypi' ],
       'dependencies': [
         'v8_libbase',
         'v8_libsampler',
-        'v8_torque#host',
-        'inspector.gyp:protocol_generated_sources#target',
-        'inspector.gyp:inspector_injected_script#target',
+        # Code generators
+        'torque#host',
+        'generate_bytecode_builtins_list#host',
       ],
       'direct_dependent_settings': {
-        'include_dirs+': ['<(SHARED_INTERMEDIATE_DIR)'],
+        'include_dirs': ['<(SHARED_INTERMEDIATE_DIR)'],
       },
       'objs': ['foo.o'],
       'variables': {
         'optimize': 'max',
       },
-      'include_dirs+': [
+      'include_dirs': [
         '..',
         '<(DEPTH)',
         '<(SHARED_INTERMEDIATE_DIR)'
@@ -569,6 +551,7 @@
         '<@(inspector_all_sources)',
         '../include//v8-inspector-protocol.h',
         '../include//v8-inspector.h',
+        '../include//v8-internal.h',
         '../include//v8-platform.h',
         '../include//v8-profiler.h',
         '../include//v8-testing.h',
@@ -582,6 +565,7 @@
         '../src/accessors.h',
         '../src/address-map.cc',
         '../src/address-map.h',
+        '../src/allocation-site-scopes-inl.h',
         '../src/allocation-site-scopes.h',
         '../src/allocation.cc',
         '../src/allocation.h',
@@ -628,8 +612,11 @@
         '../src/ast/modules.h',
         '../src/ast/prettyprinter.cc',
         '../src/ast/prettyprinter.h',
+        '../src/ast/scopes-inl.h',
         '../src/ast/scopes.cc',
         '../src/ast/scopes.h',
+        '../src/ast/source-range-ast-visitor.cc',
+        '../src/ast/source-range-ast-visitor.h',
         '../src/ast/variables.cc',
         '../src/ast/variables.h',
         '../src/bailout-reason.cc',
@@ -665,7 +652,6 @@
         '../src/builtins/builtins-internal.cc',
         '../src/builtins/builtins-interpreter.cc',
         '../src/builtins/builtins-intl.cc',
-        '../src/builtins/builtins-intl.h',
         '../src/builtins/builtins-json.cc',
         '../src/builtins/builtins-math.cc',
         '../src/builtins/builtins-number.cc',
@@ -879,6 +865,7 @@
         '../src/compiler/operator.h',
         '../src/compiler/osr.cc',
         '../src/compiler/osr.h',
+        '../src/compiler/per-isolate-compiler-cache.h',
         '../src/compiler/persistent-map.h',
         '../src/compiler/pipeline-statistics.cc',
         '../src/compiler/pipeline-statistics.h',
@@ -890,6 +877,8 @@
         '../src/compiler/raw-machine-assembler.h',
         '../src/compiler/redundancy-elimination.cc',
         '../src/compiler/redundancy-elimination.h',
+        '../src/compiler/refs-map.cc',
+        '../src/compiler/refs-map.h',
         '../src/compiler/register-allocator-verifier.cc',
         '../src/compiler/register-allocator-verifier.h',
         '../src/compiler/register-allocator.cc',
@@ -1206,6 +1195,8 @@
         '../src/macro-assembler.h',
         '../src/map-updater.cc',
         '../src/map-updater.h',
+        '../src/math-random.cc',
+        '../src/math-random.h',
         '../src/maybe-handles-inl.h',
         '../src/maybe-handles.h',
         '../src/messages.cc',
@@ -1224,6 +1215,7 @@
         '../src/objects/arguments.h',
         '../src/objects/bigint.cc',
         '../src/objects/bigint.h',
+        '../src/objects/builtin-function-id.h',
         '../src/objects/code-inl.h',
         '../src/objects/code.h',
         '../src/objects/compilation-cache-inl.h',
@@ -1247,11 +1239,17 @@
         '../src/objects/js-array-buffer.h',
         '../src/objects/js-array-inl.h',
         '../src/objects/js-array.h',
+        '../src/objects/js-break-iterator-inl.h',
+        '../src/objects/js-break-iterator.cc',
+        '../src/objects/js-break-iterator.h',
         '../src/objects/js-collator-inl.h',
         '../src/objects/js-collator.cc',
         '../src/objects/js-collator.h',
         '../src/objects/js-collection-inl.h',
         '../src/objects/js-collection.h',
+        '../src/objects/js-date-time-format-inl.h',
+        '../src/objects/js-date-time-format.cc',
+        '../src/objects/js-date-time-format.h',
         '../src/objects/js-generator-inl.h',
         '../src/objects/js-generator.h',
         '../src/objects/js-list-format-inl.h',
@@ -1260,6 +1258,11 @@
         '../src/objects/js-locale-inl.h',
         '../src/objects/js-locale.cc',
         '../src/objects/js-locale.h',
+        '../src/objects/js-number-format-inl.h',
+        '../src/objects/js-number-format.cc',
+        '../src/objects/js-number-format.h',
+        '../src/objects/js-objects-inl.h',
+        '../src/objects/js-objects.h',
         '../src/objects/js-plural-rules-inl.h',
         '../src/objects/js-plural-rules.cc',
         '../src/objects/js-plural-rules.h',
@@ -1274,6 +1277,9 @@
         '../src/objects/js-relative-time-format-inl.h',
         '../src/objects/js-relative-time-format.cc',
         '../src/objects/js-relative-time-format.h',
+        '../src/objects/js-segmenter-inl.h',
+        '../src/objects/js-segmenter.cc',
+        '../src/objects/js-segmenter.h',
         '../src/objects/literal-objects-inl.h',
         '../src/objects/literal-objects.cc',
         '../src/objects/literal-objects.h',
@@ -1284,6 +1290,9 @@
         '../src/objects/maybe-object-inl.h',
         '../src/objects/maybe-object.h',
         '../src/objects/microtask-inl.h',
+        '../src/objects/microtask-queue-inl.h',
+        '../src/objects/microtask-queue.cc',
+        '../src/objects/microtask-queue.h',
         '../src/objects/microtask.h',
         '../src/objects/module-inl.h',
         '../src/objects/module.cc',
@@ -1297,6 +1306,8 @@
         '../src/objects/ordered-hash-table.h',
         '../src/objects/promise-inl.h',
         '../src/objects/promise.h',
+        '../src/objects/property-array-inl.h',
+        '../src/objects/property-array.h',
         '../src/objects/property-descriptor-object-inl.h',
         '../src/objects/property-descriptor-object.h',
         '../src/objects/prototype-info-inl.h',
@@ -1308,6 +1319,8 @@
         '../src/objects/script.h',
         '../src/objects/shared-function-info-inl.h',
         '../src/objects/shared-function-info.h',
+        '../src/objects/stack-frame-info-inl.h',
+        '../src/objects/stack-frame-info.h',
         '../src/objects/string-inl.h',
         '../src/objects/string-table.h',
         '../src/objects/string.h',
@@ -1333,6 +1346,7 @@
         '../src/parsing/parsing.cc',
         '../src/parsing/parsing.h',
         '../src/parsing/pattern-rewriter.cc',
+        '../src/parsing/preparsed-scope-data-impl.h',
         '../src/parsing/preparsed-scope-data.cc',
         '../src/parsing/preparsed-scope-data.h',
         '../src/parsing/preparser-logger.h',
@@ -1389,6 +1403,8 @@
         '../src/regexp/jsregexp-inl.h',
         '../src/regexp/jsregexp.cc',
         '../src/regexp/jsregexp.h',
+        '../src/regexp/property-sequences.cc',
+        '../src/regexp/property-sequences.h',
         '../src/regexp/regexp-ast.cc',
         '../src/regexp/regexp-ast.h',
         '../src/regexp/regexp-macro-assembler-irregexp-inl.h',
@@ -1410,6 +1426,7 @@
         '../src/reloc-info.cc',
         '../src/reloc-info.h',
         '../src/roots-inl.h',
+        '../src/roots.cc',
         '../src/roots.h',
         '../src/runtime-profiler.cc',
         '../src/runtime-profiler.h',
@@ -1429,7 +1446,6 @@
         '../src/runtime/runtime-interpreter.cc',
         '../src/runtime/runtime-intl.cc',
         '../src/runtime/runtime-literals.cc',
-        '../src/runtime/runtime-maths.cc',
         '../src/runtime/runtime-module.cc',
         '../src/runtime/runtime-numbers.cc',
         '../src/runtime/runtime-object.cc',
@@ -1461,8 +1477,6 @@
         '../src/snapshot/builtin-serializer-allocator.h',
         '../src/snapshot/builtin-serializer.cc',
         '../src/snapshot/builtin-serializer.h',
-        '../src/snapshot/builtin-snapshot-utils.cc',
-        '../src/snapshot/builtin-snapshot-utils.h',
         '../src/snapshot/code-serializer.cc',
         '../src/snapshot/code-serializer.h',
         '../src/snapshot/default-deserializer-allocator.cc',
@@ -1505,6 +1519,8 @@
         '../src/string-builder.cc',
         '../src/string-case.cc',
         '../src/string-case.h',
+        '../src/string-constants.cc',
+        '../src/string-constants.h',
         '../src/string-hasher-inl.h',
         '../src/string-hasher.h',
         '../src/string-search.h',
@@ -1513,6 +1529,7 @@
         '../src/strtod.cc',
         '../src/strtod.h',
         '../src/third_party/utf8-decoder/utf8-decoder.h',
+        '../src/torque-assembler.h',
         '../src/tracing/trace-event.cc',
         '../src/tracing/trace-event.h',
         '../src/tracing/traced-value.cc',
@@ -1584,6 +1601,7 @@
         '../src/wasm/module-compiler.h',
         '../src/wasm/module-decoder.cc',
         '../src/wasm/module-decoder.h',
+        '../src/wasm/object-access.h',
         '../src/wasm/signature-map.cc',
         '../src/wasm/signature-map.h',
         '../src/wasm/streaming-decoder.cc',
@@ -1636,7 +1654,8 @@
         '../src/zone/zone-segment.h',
         '../src/zone/zone.cc',
         '../src/zone/zone.h',
-        '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtin-definitions-from-dsl.h',
+        '<(generate_bytecode_builtins_list_output)',
+        '<@(torque_generated_pure_headers)',
       ],
       'conditions': [
         ['want_separate_host_toolset==1', {
@@ -1916,23 +1935,12 @@
           ],
         }],
         ['OS=="win"', {
-          'variables': {
-            'gyp_generators': '<!(echo $GYP_GENERATORS)',
-          },
           'msvs_disabled_warnings': [4351, 4355, 4800],
-          'conditions': [
-            ['node_use_pch!="true"', {
-              # When building Official, the .lib is too large and exceeds the 2G
-              # limit. This breaks it into multiple pieces to avoid the limit.
-              # See http://crbug.com/485155.
-              'msvs_shard': 4,
-            }, {
-              'msvs_precompiled_header': 'tools/msvs/pch/pch_v8_base.h',
-              'msvs_precompiled_source': '../../../tools/msvs/pch/pch_v8_base.cc',
-              'sources': [
-                '../../../tools/msvs/pch/pch_v8_base.cc',
-              ],
-            }],
+              'msvs_precompiled_header': '../../../tools/msvs/pch/v8_pch.h',
+              'msvs_precompiled_source': '../../../tools/msvs/pch/v8_pch.cc',
+          'sources': [
+            '<(_msvs_precompiled_header)',
+            '<(_msvs_precompiled_source)',
           ],
           # This will prevent V8's .cc files conflicting with the inspector's
           # .cpp files in the same shard.
@@ -1948,9 +1956,10 @@
           ],
         }],
         ['v8_postmortem_support=="true"', {
+          'dependencies': [ 'postmortem-metadata#target' ],
           'sources': [
             '<(SHARED_INTERMEDIATE_DIR)/debug-support.cc',
-          ]
+          ],
         }],
         ['v8_enable_i18n_support==1', {
           'dependencies': [
@@ -1973,28 +1982,39 @@
         }, {  # v8_enable_i18n_support==0
           'sources!': [
             '../src/builtins/builtins-intl.cc',
-            '../src/builtins/builtins-intl.h',
             '../src/char-predicates.cc',
             '../src/intl.cc',
             '../src/intl.h',
             '../src/objects/intl-objects-inl.h',
             '../src/objects/intl-objects.cc',
             '../src/objects/intl-objects.h',
+            '../src/objects/js-break-iterator-inl.h',
+            '../src/objects/js-break-iterator.cc',
+            '../src/objects/js-break-iterator.h',
             '../src/objects/js-collator-inl.h',
             '../src/objects/js-collator.cc',
             '../src/objects/js-collator.h',
+            '../src/objects/js-date-time-format-inl.h',
+            '../src/objects/js-date-time-format.cc',
+            '../src/objects/js-date-time-format.h',
             '../src/objects/js-list-format-inl.h',
             '../src/objects/js-list-format.cc',
             '../src/objects/js-list-format.h',
             '../src/objects/js-locale-inl.h',
             '../src/objects/js-locale.cc',
             '../src/objects/js-locale.h',
+            '../src/objects/js-number-format-inl.h',
+            '../src/objects/js-number-format.cc',
+            '../src/objects/js-number-format.h',
             '../src/objects/js-plural-rules-inl.h',
             '../src/objects/js-plural-rules.cc',
             '../src/objects/js-plural-rules.h',
             '../src/objects/js-relative-time-format-inl.h',
             '../src/objects/js-relative-time-format.cc',
             '../src/objects/js-relative-time-format.h',
+            '../src/objects/js-segmenter-inl.h',
+            '../src/objects/js-segmenter.cc',
+            '../src/objects/js-segmenter.h',
             '../src/runtime/runtime-intl.cc',
           ],
         }],
@@ -2004,7 +2024,24 @@
           ],
         }],
       ],
-    },
+      'actions': [
+        {
+          'action_name': 'run_torque_action',
+          'inputs': [  # Order matters.
+            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)torque<(EXECUTABLE_SUFFIX)',
+            '<@(torque_files)',
+          ],
+          'outputs': [
+            '<@(torque_outputs)',
+            '<@(torque_generated_pure_headers)',
+          ],
+          'action': [
+            '<@(_inputs)',
+            '-o', '<(SHARED_INTERMEDIATE_DIR)/torque-generated'
+          ],
+        },
+      ],
+    }, # v8_base
     {
       'target_name': 'v8_libbase',
       'type': '<(component)',
@@ -2012,14 +2049,15 @@
       'variables': {
         'optimize': 'max',
       },
-      'include_dirs+': [
+      'include_dirs': [
         '..',
       ],
       'direct_dependent_settings': {
-        'include_dirs+': ['..'],
+        'include_dirs': ['..'],
       },
       'sources': [
         '../src/base/adapters.h',
+        '../src/base/address-region.h',
         '../src/base/atomic-utils.h',
         '../src/base/atomicops.h',
         '../src/base/atomicops_internals_atomicword_compat.h',
@@ -2028,6 +2066,8 @@
         '../src/base/base-export.h',
         '../src/base/bits.cc',
         '../src/base/bits.h',
+        '../src/base/bounded-page-allocator.cc',
+        '../src/base/bounded-page-allocator.h',
         '../src/base/build_config.h',
         '../src/base/compiler-specific.h',
         '../src/base/cpu.cc',
@@ -2053,6 +2093,8 @@
         '../src/base/list.h',
         '../src/base/logging.cc',
         '../src/base/logging.h',
+        '../src/base/lsan-page-allocator.cc',
+        '../src/base/lsan-page-allocator.h',
         '../src/base/macros.h',
         '../src/base/once.cc',
         '../src/base/once.h',
@@ -2069,6 +2111,8 @@
         '../src/base/platform/semaphore.h',
         '../src/base/platform/time.cc',
         '../src/base/platform/time.h',
+        '../src/base/region-allocator.cc',
+        '../src/base/region-allocator.h',
         '../src/base/ring-buffer.h',
         '../src/base/safe_conversions.h',
         '../src/base/safe_conversions_impl.h',
@@ -2192,50 +2236,20 @@
           'defines': [
             '_CRT_RAND_S'  # for rand_s()
           ],
-          'variables': {
-            'gyp_generators': '<!(echo $GYP_GENERATORS)',
-          },
-          'conditions': [
-            ['gyp_generators=="make"', {
-              'variables': {
-                'build_env': '<!(uname -o)',
-              },
-              'conditions': [
-                ['build_env=="Cygwin"', {
-                  'sources': [
-                    '../src/base/debug/stack_trace_posix.cc',
-                    '../src/base/platform/platform-cygwin.cc',
-                    '../src/base/platform/platform-posix.cc',
-                    '../src/base/platform/platform-posix.h',
-                  ],
-                }, {
-                  'sources': [
-                    '../src/base/debug/stack_trace_win.cc',
-                    '../src/base/platform/platform-win32.cc',
-                    '../src/base/win32-headers.h',
-                  ],
-                }],
-              ],
-              'link_settings':  {
-                'libraries': [ '-lwinmm', '-lws2_32' ],
-              },
-            }, {
-              'sources': [
-                '../src/base/debug/stack_trace_win.cc',
-                '../src/base/platform/platform-win32.cc',
-                '../src/base/win32-headers.h',
-              ],
-              'msvs_disabled_warnings': [4351, 4355, 4800],
-              'link_settings':  {
-                'libraries': [
-                  '-ldbghelp.lib',
-                  '-lshlwapi.lib',
-                  '-lwinmm.lib',
-                  '-lws2_32.lib'
-                ],
-              },
-            }],
+          'sources': [
+            '../src/base/debug/stack_trace_win.cc',
+            '../src/base/platform/platform-win32.cc',
+            '../src/base/win32-headers.h',
           ],
+          'msvs_disabled_warnings': [4351, 4355, 4800],
+          'link_settings':  {
+            'libraries': [
+              '-ldbghelp.lib',
+              '-lshlwapi.lib',
+              '-lwinmm.lib',
+              '-lws2_32.lib'
+            ],
+          },
         }],
         ['OS=="qnx"', {
             'link_settings': {
@@ -2338,7 +2352,7 @@
           }
         ],
       ],
-    },
+    }, # v8_libbase
     {
       'target_name': 'v8_libplatform',
       'type': '<(component)',
@@ -2348,15 +2362,15 @@
       'dependencies': [
         'v8_libbase',
       ],
-      'include_dirs+': [
+      'include_dirs': [
         '..',
         '<(DEPTH)',
         '../include/',
       ],
       'sources': [
-        '../include//libplatform/libplatform-export.h',
-        '../include//libplatform/libplatform.h',
-        '../include//libplatform/v8-tracing.h',
+        '../include/libplatform/libplatform-export.h',
+        '../include/libplatform/libplatform.h',
+        '../include/libplatform/v8-tracing.h',
         '../src/libplatform/default-foreground-task-runner.cc',
         '../src/libplatform/default-foreground-task-runner.h',
         '../src/libplatform/default-platform.cc',
@@ -2393,7 +2407,7 @@
           '../include/',
         ],
       },
-    },
+    }, # v8_libplatform
     {
       'target_name': 'v8_libsampler',
       'type': 'static_library',
@@ -2403,7 +2417,7 @@
       'dependencies': [
         'v8_libbase',
       ],
-      'include_dirs+': [
+      'include_dirs': [
         '..',
         '../include/',
       ],
@@ -2423,11 +2437,16 @@
           '../include/',
         ],
       },
-    },
+    }, # v8_libsampler
     {
       'target_name': 'natives_blob',
       'type': 'none',
       'conditions': [
+        ['want_separate_host_toolset==1', {
+          'toolsets': ['host', 'target'],
+        }, {
+           'toolsets': ['target'],
+        }],
         [ 'v8_use_external_startup_data==1', {
           'conditions': [
             ['want_separate_host_toolset==1', {
@@ -2436,51 +2455,99 @@
               'dependencies': ['js2c'],
             }],
           ],
-          'actions': [{
-            'action_name': 'concatenate_natives_blob',
-            'inputs': [
-              '../tools//concatenate-files.py',
-              '<(SHARED_INTERMEDIATE_DIR)/libraries.bin',
-              '<(SHARED_INTERMEDIATE_DIR)/libraries-extras.bin',
-              '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental-extras.bin',
-            ],
-            'conditions': [
-              ['want_separate_host_toolset==1', {
-                'target_conditions': [
-                  ['_toolset=="host"', {
-                    'outputs': [
-                      '<(PRODUCT_DIR)/natives_blob_host.bin',
-                    ],
-                    'action': [
-                      'python', '<@(_inputs)', '<(PRODUCT_DIR)/natives_blob_host.bin'
-                    ],
-                  }, {
-                    'outputs': [
-                      '<(PRODUCT_DIR)/natives_blob.bin',
-                    ],
-                    'action': [
-                      'python', '<@(_inputs)', '<(PRODUCT_DIR)/natives_blob.bin'
-                    ],
-                  }],
-                ],
-              }, {
-                'outputs': [
-                  '<(PRODUCT_DIR)/natives_blob.bin',
-                ],
-                'action': [
-                  'python', '<@(_inputs)', '<(PRODUCT_DIR)/natives_blob.bin'
-                ],
-              }],
-            ],
-          }],
-        }],
-        ['want_separate_host_toolset==1', {
-          'toolsets': ['host', 'target'],
-        }, {
-          'toolsets': ['target'],
+          'actions': [
+            {
+              'action_name': 'js2c_bin',
+              'inputs': [
+                '../tools/js2c.py',
+                '<@(library_files)',
+              ],
+              'outputs': ['<@(libraries_bin_file)'],
+              'action': [
+                'python',
+                '../tools/js2c.py',
+                '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
+                'CORE',
+                '<@(library_files)',
+                '--startup_blob', '<@(libraries_bin_file)',
+                '--nojs',
+              ],
+            },
+            {
+              'action_name': 'js2c_extras_bin',
+              'inputs': [
+                '../tools/js2c.py',
+                '<@(v8_extra_library_files)',
+              ],
+              'outputs': ['<@(libraries_extras_bin_file)'],
+              'action': [
+                'python',
+                '../tools/js2c.py',
+                '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
+                'EXTRAS',
+                '<@(v8_extra_library_files)',
+                '--startup_blob', '<@(libraries_extras_bin_file)',
+                '--nojs',
+              ],
+            },
+            {
+              'action_name': 'js2c_experimental_extras_bin',
+              'inputs': [
+                '../tools/js2c.py',
+                '<@(v8_experimental_extra_library_files)',
+              ],
+              'outputs': ['<@(libraries_experimental_extras_bin_file)'],
+              'action': [
+                'python',
+                '../tools/js2c.py',
+                '<(SHARED_INTERMEDIATE_DIR)/experimental-extras-libraries.cc',
+                'EXPERIMENTAL_EXTRAS',
+                '<@(v8_experimental_extra_library_files)',
+                '--startup_blob', '<@(libraries_experimental_extras_bin_file)',
+                '--nojs',
+              ],
+            },
+            {
+              'action_name': 'concatenate_natives_blob',
+              'inputs': [
+                '../tools/concatenate-files.py',
+                '<(SHARED_INTERMEDIATE_DIR)/libraries.bin',
+                '<(SHARED_INTERMEDIATE_DIR)/libraries-extras.bin',
+                '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental-extras.bin',
+              ],
+              'conditions': [
+                ['want_separate_host_toolset==1', {
+                  'target_conditions': [
+                    ['_toolset=="host"', {
+                      'outputs': [
+                        '<(PRODUCT_DIR)/natives_blob_host.bin',
+                      ],
+                      'action': [
+                        'python', '<@(_inputs)', '<(PRODUCT_DIR)/natives_blob_host.bin'
+                      ],
+                    }, {
+                      'outputs': [
+                        '<(PRODUCT_DIR)/natives_blob.bin',
+                      ],
+                      'action': [
+                        'python', '<@(_inputs)', '<(PRODUCT_DIR)/natives_blob.bin'
+                      ],
+                    }],
+                  ],
+                }, {
+                  'outputs': [
+                    '<(PRODUCT_DIR)/natives_blob.bin',
+                  ],
+                  'action': [
+                    'python', '<@(_inputs)', '<(PRODUCT_DIR)/natives_blob.bin'
+                  ],
+                }],
+              ],
+            },
+          ],
         }],
       ]
-    },
+    }, # natives_blob
     {
       'target_name': 'js2c',
       'type': 'none',
@@ -2512,71 +2579,37 @@
         {
           'action_name': 'js2c',
           'inputs': [
-            '../tools//js2c.py',
+            '../tools/js2c.py',
             '<@(library_files)',
           ],
           'outputs': ['<(SHARED_INTERMEDIATE_DIR)/libraries.cc'],
           'action': [
             'python',
-            '../tools//js2c.py',
+            '../tools/js2c.py',
             '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
             'CORE',
             '<@(library_files)',
           ],
         },
-        {
-          'action_name': 'js2c_bin',
-          'inputs': [
-            '../tools//js2c.py',
-            '<@(library_files)',
-          ],
-          'outputs': ['<@(libraries_bin_file)'],
-          'action': [
-            'python',
-            '../tools//js2c.py',
-            '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
-            'CORE',
-            '<@(library_files)',
-            '--startup_blob', '<@(libraries_bin_file)',
-            '--nojs',
-          ],
-        },
-        {
+       {
           'action_name': 'js2c_extras',
           'inputs': [
-            '../tools//js2c.py',
+            '../tools/js2c.py',
             '<@(v8_extra_library_files)',
           ],
           'outputs': ['<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc'],
           'action': [
             'python',
-            '../tools//js2c.py',
+            '../tools/js2c.py',
             '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
             'EXTRAS',
             '<@(v8_extra_library_files)',
-          ],
-        },
-        {
-          'action_name': 'js2c_extras_bin',
-          'inputs': [
-            '../tools//js2c.py',
-            '<@(v8_extra_library_files)',
-          ],
-          'outputs': ['<@(libraries_extras_bin_file)'],
-          'action': [
-            'python',
-            '../tools//js2c.py',
-            '<(SHARED_INTERMEDIATE_DIR)/extras-libraries.cc',
-            'EXTRAS',
-            '<@(v8_extra_library_files)',
-            '--startup_blob', '<@(libraries_extras_bin_file)',
-            '--nojs',
           ],
         },
         {
           'action_name': 'js2c_experimental_extras',
           'inputs': [
-            '../tools//js2c.py',
+            '../tools/js2c.py',
             '<@(v8_experimental_extra_library_files)',
           ],
           'outputs': [
@@ -2584,62 +2617,36 @@
           ],
           'action': [
             'python',
-            '../tools//js2c.py',
+            '../tools/js2c.py',
             '<(SHARED_INTERMEDIATE_DIR)/experimental-extras-libraries.cc',
             'EXPERIMENTAL_EXTRAS',
             '<@(v8_experimental_extra_library_files)',
-          ],
-        },
-        {
-          'action_name': 'js2c_experimental_extras_bin',
-          'inputs': [
-            '../tools//js2c.py',
-            '<@(v8_experimental_extra_library_files)',
-          ],
-          'outputs': ['<@(libraries_experimental_extras_bin_file)'],
-          'action': [
-            'python',
-            '../tools//js2c.py',
-            '<(SHARED_INTERMEDIATE_DIR)/experimental-extras-libraries.cc',
-            'EXPERIMENTAL_EXTRAS',
-            '<@(v8_experimental_extra_library_files)',
-            '--startup_blob', '<@(libraries_experimental_extras_bin_file)',
-            '--nojs',
           ],
         },
       ],
-    },
+    }, # js2c
     {
-      'target_name': 'torque',
-      'type': 'executable',
+      'target_name': 'torque_base',
+      'type': '<(component)',
       'toolsets': ['host'],
-      'dependencies': ['v8_libbase'],
+      'dependencies': ['v8_libbase#host'],
       'defines!': [
         '_HAS_EXCEPTIONS=0',
         'BUILDING_V8_SHARED=1',
       ],
-      # This is defined trough `configurations` for GYP+ninja compatibility
-      'configurations': {
-        'Debug': {
-          'msvs_settings': {
-            'VCCLCompilerTool': {
-              'RuntimeTypeInfo': 'true',
-              'ExceptionHandling': 1,
-            },
-          }
-        },
-        'Release': {
-          'msvs_settings': {
-            'VCCLCompilerTool': {
-              'RuntimeTypeInfo': 'true',
-              'ExceptionHandling': 1,
-            },
-          }
+      'msvs_settings': {
+        'VCCLCompilerTool': {
+          'RuntimeTypeInfo': 'true',
+          'ExceptionHandling': 1,
         },
       },
       'sources': [
         '../src/torque/ast.h',
+        '../src/torque/cfg.cc',
+        '../src/torque/cfg.h',
         '../src/torque/contextual.h',
+        '../src/torque/csa-generator.cc',
+        '../src/torque/csa-generator.h',
         '../src/torque/declarable.cc',
         '../src/torque/declarable.h',
         '../src/torque/declaration-visitor.cc',
@@ -2653,13 +2660,14 @@
         '../src/torque/global-context.h',
         '../src/torque/implementation-visitor.cc',
         '../src/torque/implementation-visitor.h',
+        '../src/torque/instructions.cc',
+        '../src/torque/instructions.h',
         '../src/torque/scope.cc',
         '../src/torque/scope.h',
         '../src/torque/source-positions.cc',
         '../src/torque/source-positions.h',
         '../src/torque/torque-parser.cc',
         '../src/torque/torque-parser.h',
-        '../src/torque/torque.cc',
         '../src/torque/type-oracle.cc',
         '../src/torque/type-oracle.h',
         '../src/torque/types.cc',
@@ -2667,44 +2675,28 @@
         '../src/torque/utils.cc',
         '../src/torque/utils.h',
       ],
-    },
+    }, # torque_base
     {
-      'target_name': 'v8_torque',
-      'type': 'none',
+      'target_name': 'torque',
+      'type': 'executable',
       'toolsets': ['host'],
-      'dependencies': ['torque#host'],
-      'direct_dependent_settings': {
-        'include_dirs+': ['<(SHARED_INTERMEDIATE_DIR)'],
-      },
-      'actions': [
-        {
-          'action_name': 'run_torque',
-          'inputs': [  # Order matters.
-            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)torque<(EXECUTABLE_SUFFIX)',
-            '../src/builtins/base.tq',
-            '../src/builtins/array.tq',
-            '../src/builtins/array-copywithin.tq',
-            '../src/builtins/array-foreach.tq',
-            '../src/builtins/array-reverse.tq',
-            '../src/builtins/typed-array.tq',
-            '../src/builtins/data-view.tq',
-            '../third_party/v8/builtins/array-sort.tq',
-          ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtin-definitions-from-dsl.h',
-            '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-array-from-dsl-gen.cc',
-            '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-array-from-dsl-gen.h',
-            '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-base-from-dsl-gen.cc',
-            '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-base-from-dsl-gen.h',
-            '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-typed-array-from-dsl-gen.cc',
-            '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-typed-array-from-dsl-gen.h',
-            '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-data-view-from-dsl-gen.cc',
-            '<(SHARED_INTERMEDIATE_DIR)/torque-generated/builtins-data-view-from-dsl-gen.h',
-          ],
-          'action': ['<@(_inputs)', '-o', '<(SHARED_INTERMEDIATE_DIR)/torque-generated'],
-        },
+      'dependencies': ['torque_base'],
+      'defines!': [
+        '_HAS_EXCEPTIONS=0',
+        'BUILDING_V8_SHARED=1',
       ],
-    },
+      # This is defined trough `configurations` for GYP+ninja compatibility
+      'msvs_settings': {
+        'VCCLCompilerTool': {
+          'RuntimeTypeInfo': 'true',
+          'ExceptionHandling': 1,
+        },
+      },
+      'include_dirs': ['..'],
+      'sources': [
+        "../src/torque/torque.cc",
+      ],
+    }, # torque
     {
       'target_name': 'postmortem-metadata',
       'type': 'none',
@@ -2712,6 +2704,8 @@
         'heapobject_files': [
             '../src/objects.h',
             '../src/objects-inl.h',
+            '../src/objects/allocation-site-inl.h',
+            '../src/objects/allocation-site.h',
             '../src/objects/code-inl.h',
             '../src/objects/code.h',
             '../src/objects/data-handler.h',
@@ -2722,12 +2716,16 @@
             '../src/objects/js-array.h',
             '../src/objects/js-array-buffer-inl.h',
             '../src/objects/js-array-buffer.h',
+            '../src/objects/js-objects-inl.h',
+            '../src/objects/js-objects.h',
             '../src/objects/js-regexp-inl.h',
             '../src/objects/js-regexp.h',
             '../src/objects/js-regexp-string-iterator-inl.h',
             '../src/objects/js-regexp-string-iterator.h',
             '../src/objects/map.h',
             '../src/objects/map-inl.h',
+            '../src/objects/name.h',
+            '../src/objects/name-inl.h',
             '../src/objects/scope-info.h',
             '../src/objects/script.h',
             '../src/objects/script-inl.h',
@@ -2738,24 +2736,24 @@
         ],
       },
       'actions': [
-          {
-            'action_name': 'gen-postmortem-metadata',
-            'inputs': [
-              '../tools//gen-postmortem-metadata.py',
-              '<@(heapobject_files)',
-            ],
-            'outputs': [
-              '<(SHARED_INTERMEDIATE_DIR)/debug-support.cc',
-            ],
-            'action': [
-              'python',
-              '../tools//gen-postmortem-metadata.py',
-              '<@(_outputs)',
-              '<@(heapobject_files)'
-            ]
-          }
-        ]
-    },
+        {
+          'action_name': 'gen-postmortem-metadata',
+          'inputs': [
+            '../tools/gen-postmortem-metadata.py',
+            '<@(heapobject_files)',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/debug-support.cc',
+          ],
+          'action': [
+            'python',
+            '../tools/gen-postmortem-metadata.py',
+            '<@(_outputs)',
+            '<@(heapobject_files)'
+          ],
+        },
+      ],
+    }, # postmortem-metadata
     {
       'target_name': 'mksnapshot',
       'type': 'executable',
@@ -2766,7 +2764,7 @@
         'v8_libplatform',
         'v8_nosnapshot',
       ],
-      'include_dirs+': [
+      'include_dirs': [
         '..',
         '<(DEPTH)',
       ],
@@ -2786,53 +2784,50 @@
           'toolsets': ['target'],
         }],
       ],
-    },
+    }, # mksnapshot
     {
-      'target_name': 'v8_dump_build_config',
+      'target_name': 'bytecode_builtins_list_generator',
+      'type': 'executable',
+      'toolsets': ['host'],
+      'dependencies': [
+        "v8_libbase#host"
+      ],
+      'include_dirs': [".."],
+      'sources': [
+        "../src/builtins/generate-bytecodes-builtins-list.cc",
+        "../src/interpreter/bytecode-operands.cc",
+        "../src/interpreter/bytecode-operands.h",
+        "../src/interpreter/bytecodes.cc",
+        "../src/interpreter/bytecodes.h",
+      ],
+    }, # bytecode_builtins_list_generator
+    {
+      'target_name': 'generate_bytecode_builtins_list',
       'type': 'none',
-      'variables': {
-      },
+      'toolsets': ['host'],
+      'dependencies': [
+        "bytecode_builtins_list_generator",
+      ],
       'actions': [
         {
-          'action_name': 'v8_dump_build_config',
+          'action_name': 'generate_bytecode_builtins_list_action',
           'inputs': [
-            '../tools//testrunner/utils/dump_build_config_gyp.py',
+            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)bytecode_builtins_list_generator<(EXECUTABLE_SUFFIX)',
           ],
           'outputs': [
-            '<(PRODUCT_DIR)/v8_build_config.json',
+            '<(generate_bytecode_builtins_list_output)',
           ],
           'action': [
             'python',
-            '../tools//testrunner/utils/dump_build_config_gyp.py',
-            '<(PRODUCT_DIR)/v8_build_config.json',
-            'dcheck_always_on=<(dcheck_always_on)',
-            'is_asan=<(asan)',
-            'is_cfi=<(cfi_vptr)',
-            'is_component_build=<(component)',
-            'is_debug=<(CONFIGURATION_NAME)',
-            # Not available in gyp.
-            'is_gcov_coverage=0',
-            'is_msan=<(msan)',
-            'is_tsan=<(tsan)',
-            # Not available in gyp.
-            'is_ubsan_vptr=0',
-            'target_cpu=<(target_arch)',
-            'v8_enable_i18n_support=<(v8_enable_i18n_support)',
-            'v8_enable_verify_predictable=<(v8_enable_verify_predictable)',
-            'v8_target_cpu=<(v8_target_arch)',
-            'v8_use_snapshot=<(v8_use_snapshot)',
-          ],
-          'conditions': [
-            ['v8_target_arch=="mips" or v8_target_arch=="mipsel" \
-              or v8_target_arch=="mips64" or v8_target_arch=="mips64el"', {
-                'action':[
-                  'mips_arch_variant=<(mips_arch_variant)',
-                  'mips_use_msa=<(mips_use_msa)',
-                ],
-            }],
+            '../tools/run.py',
+            '<@(_inputs)',
+            '<@(_outputs)',
           ],
         },
       ],
-    },
+    }, # generate_bytecode_builtins_list
+    {
+      'includes': [ 'v8_external_snapshot.gypi' ],
+    }, # v8_external_snapshot
   ],
 }

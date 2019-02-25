@@ -14,12 +14,27 @@ cares.getaddrinfo = () => internalBinding('uv').UV_ENOENT;
   const err = {
     code: 'ERR_INVALID_ARG_TYPE',
     type: TypeError,
-    message: /^The "hostname" argument must be one of type string or falsy/
+    message: /^The "hostname" argument must be of type string\. Received type number/
   };
 
   common.expectsError(() => dns.lookup(1, {}), err);
   common.expectsError(() => dnsPromises.lookup(1, {}), err);
 }
+
+// This also verifies different expectWarning notations.
+common.expectWarning({
+  // For 'internal/test/binding' module.
+  'internal/test/binding': [
+    'These APIs are for internal testing only. Do not use them.'
+  ],
+  // For dns.promises.
+  'ExperimentalWarning': 'The dns.promises API is experimental',
+  // For calling `dns.lookup` with falsy `hostname`.
+  'DeprecationWarning': {
+    DEP0118: 'The provided hostname "false" is not a valid ' +
+      'hostname, and is supported in the dns module solely for compatibility.'
+  }
+});
 
 common.expectsError(() => {
   dns.lookup(false, 'cb');

@@ -12,7 +12,7 @@ const assert = require('assert');
 
 common.expectWarning({
   Warning: [
-    ['Use Cipheriv for counter mode of aes-256-gcm', common.noWarnCode]
+    ['Use Cipheriv for counter mode of aes-256-gcm']
   ],
   DeprecationWarning: [
     ['crypto.createCipher is deprecated.', 'DEP0106']
@@ -168,13 +168,13 @@ testCipher2(Buffer.from('0123456789abcdef'));
 // not assert. See https://github.com/nodejs/node-v0.x-archive/issues/4886.
 {
   const c = crypto.createCipher('aes-256-cbc', 'secret');
-  try { c.final('xxx'); } catch (e) { /* Ignore. */ }
-  try { c.final('xxx'); } catch (e) { /* Ignore. */ }
-  try { c.final('xxx'); } catch (e) { /* Ignore. */ }
+  try { c.final('xxx'); } catch { /* Ignore. */ }
+  try { c.final('xxx'); } catch { /* Ignore. */ }
+  try { c.final('xxx'); } catch { /* Ignore. */ }
   const d = crypto.createDecipher('aes-256-cbc', 'secret');
-  try { d.final('xxx'); } catch (e) { /* Ignore. */ }
-  try { d.final('xxx'); } catch (e) { /* Ignore. */ }
-  try { d.final('xxx'); } catch (e) { /* Ignore. */ }
+  try { d.final('xxx'); } catch { /* Ignore. */ }
+  try { d.final('xxx'); } catch { /* Ignore. */ }
+  try { d.final('xxx'); } catch { /* Ignore. */ }
 }
 
 // Regression test for https://github.com/nodejs/node-v0.x-archive/issues/5482:
@@ -238,7 +238,7 @@ testCipher2(Buffer.from('0123456789abcdef'));
   assert.strictEqual(decipher.setAAD(aadbuf), decipher);
 }
 
-// error throwing in setAAD/setAuthTag/getAuthTag/setAutoPadding
+// Error throwing in setAAD/setAuthTag/getAuthTag/setAutoPadding
 {
   const key = '0123456789';
   const aadbuf = Buffer.from('aadbuf');

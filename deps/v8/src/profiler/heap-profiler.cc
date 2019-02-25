@@ -23,9 +23,14 @@ HeapProfiler::~HeapProfiler() = default;
 
 void HeapProfiler::DeleteAllSnapshots() {
   snapshots_.clear();
-  names_.reset(new StringsStorage());
+  MaybeClearStringsStorage();
 }
 
+void HeapProfiler::MaybeClearStringsStorage() {
+  if (snapshots_.empty() && !sampling_heap_profiler_ && !allocation_tracker_) {
+    names_.reset(new StringsStorage());
+  }
+}
 
 void HeapProfiler::RemoveSnapshot(HeapSnapshot* snapshot) {
   snapshots_.erase(
@@ -126,6 +131,7 @@ bool HeapProfiler::StartSamplingHeapProfiler(
 
 void HeapProfiler::StopSamplingHeapProfiler() {
   sampling_heap_profiler_.reset();
+  MaybeClearStringsStorage();
 }
 
 
@@ -159,6 +165,7 @@ void HeapProfiler::StopHeapObjectsTracking() {
   ids_->StopHeapObjectsTracking();
   if (allocation_tracker_) {
     allocation_tracker_.reset();
+    MaybeClearStringsStorage();
     heap()->RemoveHeapObjectAllocationTracker(this);
   }
 }
@@ -229,10 +236,7 @@ void HeapProfiler::QueryObjects(Handle<Context> context,
                                 PersistentValueVector<v8::Object>* objects) {
   // We should return accurate information about live objects, so we need to
   // collect all garbage first.
-  heap()->CollectAllAvailableGarbage(
-      GarbageCollectionReason::kLowMemoryNotification);
-  heap()->CollectAllGarbage(Heap::kMakeHeapIterableMask,
-                            GarbageCollectionReason::kHeapProfiler);
+  heap()->CollectAllAvailableGarbage(GarbageCollectionReason::kHeapProfiler);
   HeapIterator heap_iterator(heap());
   HeapObject* heap_obj;
   while ((heap_obj = heap_iterator.next()) != nullptr) {

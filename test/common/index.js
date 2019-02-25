@@ -28,26 +28,66 @@ const assert = require('assert');
 const os = require('os');
 const { exec, execSync, spawnSync } = require('child_process');
 const util = require('util');
-const { fixturesDir } = require('./fixtures');
 const tmpdir = require('./tmpdir');
 const {
   bits,
   hasIntl
 } = process.binding('config');
+const { isMainThread } = require('worker_threads');
+
+// Some tests assume a umask of 0o022 so set that up front. Tests that need a
+// different umask will set it themselves.
+//
+// Workers can read, but not set the umask, so check that this is the main
+// thread.
+if (isMainThread)
+  process.umask(0o022);
 
 const noop = () => {};
 
-const isMainThread = (() => {
-  try {
-    return require('worker_threads').isMainThread;
-  } catch {
-    // Worker module not enabled → only a single main thread exists.
-    return true;
+const hasCrypto = Boolean(process.versions.openssl);
+
+// Check for flags. Skip this for workers (both, the `cluster` module and
+// `worker_threads`) and child processes.
+if (process.argv.length === 2 &&
+    isMainThread &&
+    module.parent &&
+    require('cluster').isMaster) {
+  // The copyright notice is relatively big and the flags could come afterwards.
+  const bytesToRead = 1500;
+  const buffer = Buffer.allocUnsafe(bytesToRead);
+  const fd = fs.openSync(module.parent.filename, 'r');
+  const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead);
+  fs.closeSync(fd);
+  const source = buffer.toString('utf8', 0, bytesRead);
+
+  const flagStart = source.indexOf('// Flags: --') + 10;
+  if (flagStart !== 9) {
+    let flagEnd = source.indexOf('\n', flagStart);
+    // Normalize different EOL.
+    if (source[flagEnd - 1] === '\r') {
+      flagEnd--;
+    }
+    const flags = source
+      .substring(flagStart, flagEnd)
+      .replace(/_/g, '-')
+      .split(' ');
+    const args = process.execArgv.map((arg) => arg.replace(/_/g, '-'));
+    for (const flag of flags) {
+      if (!args.includes(flag) &&
+          // If the binary was built without-ssl then the crypto flags are
+          // invalid (bad option). The test itself should handle this case.
+          hasCrypto &&
+          // If the binary is build without `intl` the inspect option is
+          // invalid. The test itself should handle this case.
+          (process.features.inspector || !flag.startsWith('--inspect'))) {
+        throw new Error(`Test has to be started with the flag: '${flag}'`);
+      }
+    }
   }
-})();
+}
 
 const isWindows = process.platform === 'win32';
-const isWOW64 = isWindows && (process.env.PROCESSOR_ARCHITEW6432 !== undefined);
 const isAIX = process.platform === 'aix';
 const isLinuxPPCBE = (process.platform === 'linux') &&
                      (process.arch === 'ppc64') &&
@@ -67,7 +107,6 @@ const rootDir = isWindows ? 'c:\\' : '/';
 
 const buildType = process.config.target_defaults.default_configuration;
 
-const hasCrypto = Boolean(process.versions.openssl);
 
 // If env var is set then enable async_hook hooks for all tests.
 if (process.env.NODE_TEST_WITH_ASYNC_HOOKS) {
@@ -78,7 +117,7 @@ if (process.env.NODE_TEST_WITH_ASYNC_HOOKS) {
   const async_wrap = internalBinding('async_wrap');
 
   process.on('exit', () => {
-    // iterate through handles to make sure nothing crashes
+    // Iterate through handles to make sure nothing crashes
     for (const k in initHandles)
       util.inspect(initHandles[k]);
   });
@@ -174,13 +213,10 @@ function childShouldThrowAndAbort() {
   });
 }
 
-function ddCommand(filename, kilobytes) {
-  if (isWindows) {
-    const p = path.resolve(fixturesDir, 'create-file.js');
-    return `"${process.argv[0]}" "${p}" "${filename}" ${kilobytes * 1024}`;
-  } else {
-    return `dd if=/dev/zero of="${filename}" bs=1024 count=${kilobytes}`;
-  }
+function createZeroFilledFile(filename) {
+  const fd = fs.openSync(filename, 'w');
+  fs.ftruncateSync(fd, 10 * 1024 * 1024);
+  fs.closeSync(fd);
 }
 
 
@@ -190,14 +226,17 @@ const pwdCommand = isWindows ?
 
 
 function platformTimeout(ms) {
-  if (process.features.debug)
-    ms = 2 * ms;
+  // ESLint will not support 'bigint' in valid-typeof until it reaches stage 4.
+  // See https://github.com/eslint/eslint/pull/9636.
+  // eslint-disable-next-line valid-typeof
+  const multipliers = typeof ms === 'bigint' ?
+    { two: 2n, four: 4n, seven: 7n } : { two: 2, four: 4, seven: 7 };
 
-  if (global.__coverage__)
-    ms = 4 * ms;
+  if (process.features.debug)
+    ms = multipliers.two * ms;
 
   if (isAIX)
-    return 2 * ms; // default localhost speed is slower on AIX
+    return multipliers.two * ms; // default localhost speed is slower on AIX
 
   if (process.arch !== 'arm')
     return ms;
@@ -205,21 +244,19 @@ function platformTimeout(ms) {
   const armv = process.config.variables.arm_version;
 
   if (armv === '6')
-    return 7 * ms;  // ARMv6
+    return multipliers.seven * ms;  // ARMv6
 
   if (armv === '7')
-    return 2 * ms;  // ARMv7
+    return multipliers.two * ms;  // ARMv7
 
   return ms; // ARMv8+
 }
 
 let knownGlobals = [
-  Buffer,
   clearImmediate,
   clearInterval,
   clearTimeout,
   global,
-  process,
   setImmediate,
   setInterval,
   setTimeout
@@ -236,15 +273,6 @@ if (global.DTRACE_HTTP_SERVER_RESPONSE) {
   knownGlobals.push(DTRACE_HTTP_CLIENT_REQUEST);
   knownGlobals.push(DTRACE_NET_STREAM_END);
   knownGlobals.push(DTRACE_NET_SERVER_CONNECTION);
-}
-
-if (global.COUNTER_NET_SERVER_CONNECTION) {
-  knownGlobals.push(COUNTER_NET_SERVER_CONNECTION);
-  knownGlobals.push(COUNTER_NET_SERVER_CONNECTION_CLOSE);
-  knownGlobals.push(COUNTER_HTTP_SERVER_REQUEST);
-  knownGlobals.push(COUNTER_HTTP_SERVER_RESPONSE);
-  knownGlobals.push(COUNTER_HTTP_CLIENT_REQUEST);
-  knownGlobals.push(COUNTER_HTTP_CLIENT_RESPONSE);
 }
 
 if (process.env.NODE_TEST_KNOWN_GLOBALS) {
@@ -265,11 +293,7 @@ function leakedGlobals() {
     }
   }
 
-  if (global.__coverage__) {
-    return leaked.filter((varname) => !/^(?:cov_|__cov)/.test(varname));
-  } else {
-    return leaked;
-  }
+  return leaked;
 }
 
 process.on('exit', function() {
@@ -313,12 +337,6 @@ function mustCallAtLeast(fn, minimum) {
   return _mustCallInner(fn, minimum, 'minimum');
 }
 
-function mustCallAsync(fn, exact) {
-  return mustCall((...args) => {
-    return Promise.resolve(fn(...args)).then(mustCall((val) => val));
-  }, exact);
-}
-
 function _mustCallInner(fn, criteria = 1, field) {
   if (process._exiting)
     throw new Error('Cannot use common.mustCall*() in process exit handler');
@@ -339,7 +357,7 @@ function _mustCallInner(fn, criteria = 1, field) {
     name: fn.name || '<anonymous>'
   };
 
-  // add the exit listener only once to avoid listener leak warnings
+  // Add the exit listener only once to avoid listener leak warnings
   if (mustCallChecks.length === 0) process.on('exit', runCallChecks);
 
   mustCallChecks.push(context);
@@ -381,7 +399,7 @@ function canCreateSymLink() {
     try {
       const output = execSync(`${whoamiPath} /priv`, { timout: 1000 });
       return output.includes('SeCreateSymbolicLinkPrivilege');
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -395,7 +413,7 @@ function getCallSite(top) {
     `${stack[0].getFileName()}:${stack[0].getLineNumber()}`;
   const err = new Error();
   Error.captureStackTrace(err, top);
-  // with the V8 Error API, the stack is not formatted until it is accessed
+  // With the V8 Error API, the stack is not formatted until it is accessed
   err.stack;
   Error.prepareStackTrace = originalStackFormatter;
   return err.stack;
@@ -465,59 +483,48 @@ function isAlive(pid) {
   try {
     process.kill(pid, 'SIGCONT');
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
 
-function _expectWarning(name, expected) {
-  const map = new Map(expected);
+function _expectWarning(name, expected, code) {
+  if (typeof expected === 'string') {
+    expected = [[expected, code]];
+  } else if (!Array.isArray(expected)) {
+    expected = Object.entries(expected).map(([a, b]) => [b, a]);
+  } else if (!(Array.isArray(expected[0]))) {
+    expected = [[expected[0], expected[1]]];
+  }
+  // Deprecation codes are mandatory, everything else is not.
+  if (name === 'DeprecationWarning') {
+    expected.forEach(([_, code]) => assert(code, expected));
+  }
   return mustCall((warning) => {
+    const [ message, code ] = expected.shift();
     assert.strictEqual(warning.name, name);
-    assert.ok(map.has(warning.message),
-              `unexpected error message: "${warning.message}"`);
-    const code = map.get(warning.message);
+    assert.strictEqual(warning.message, message);
     assert.strictEqual(warning.code, code);
-    // Remove a warning message after it is seen so that we guarantee that we
-    // get each message only once.
-    map.delete(expected);
   }, expected.length);
 }
 
-function expectWarningByName(name, expected, code) {
-  if (typeof expected === 'string') {
-    expected = [[expected, code]];
-  }
-  process.on('warning', _expectWarning(name, expected));
-}
+let catchWarning;
 
-function expectWarningByMap(warningMap) {
-  const catchWarning = {};
-  Object.keys(warningMap).forEach((name) => {
-    let expected = warningMap[name];
-    if (!Array.isArray(expected)) {
-      throw new Error('warningMap entries must be arrays consisting of two ' +
-      'entries: [message, warningCode]');
-    }
-    if (!(Array.isArray(expected[0]))) {
-      if (expected.length === 0) {
-        return;
-      }
-      expected = [[expected[0], expected[1]]];
-    }
-    catchWarning[name] = _expectWarning(name, expected);
-  });
-  process.on('warning', (warning) => catchWarning[warning.name](warning));
-}
-
-// accepts a warning name and description or array of descriptions or a map
-// of warning names to description(s)
-// ensures a warning is generated for each name/description pair
+// Accepts a warning name and description or array of descriptions or a map of
+// warning names to description(s) ensures a warning is generated for each
+// name/description pair.
+// The expected messages have to be unique per `expectWarning()` call.
 function expectWarning(nameOrMap, expected, code) {
+  if (catchWarning === undefined) {
+    catchWarning = {};
+    process.on('warning', (warning) => catchWarning[warning.name](warning));
+  }
   if (typeof nameOrMap === 'string') {
-    expectWarningByName(nameOrMap, expected, code);
+    catchWarning[nameOrMap] = _expectWarning(nameOrMap, expected, code);
   } else {
-    expectWarningByMap(nameOrMap);
+    Object.keys(nameOrMap).forEach((name) => {
+      catchWarning[name] = _expectWarning(name, nameOrMap[name]);
+    });
   }
 }
 
@@ -610,8 +617,14 @@ function expectsError(fn, settings, exact) {
 }
 
 function skipIfInspectorDisabled() {
-  if (process.config.variables.v8_enable_inspector === 0) {
+  if (!process.features.inspector) {
     skip('V8 inspector is disabled');
+  }
+}
+
+function skipIfReportDisabled() {
+  if (!process.config.variables.node_report) {
+    skip('Node Report is disabled');
   }
 }
 
@@ -674,7 +687,7 @@ function getTTYfd() {
   if (ttyFd === undefined) {
     try {
       return fs.openSync('/dev/tty');
-    } catch (e) {
+    } catch {
       // There aren't any tty fd's available to use.
       return -1;
     }
@@ -688,7 +701,7 @@ function runWithInvalidFD(func) {
   // be an valid one.
   try {
     while (fs.fstatSync(fd--) && fd > 0);
-  } catch (e) {
+  } catch {
     return func(fd);
   }
 
@@ -701,7 +714,7 @@ module.exports = {
   busyLoop,
   canCreateSymLink,
   childShouldThrowAndAbort,
-  ddCommand,
+  createZeroFilledFile,
   disableCrashOnUnhandledRejection,
   enoughTestCpu,
   enoughTestMem,
@@ -725,14 +738,11 @@ module.exports = {
   isOSX,
   isSunOS,
   isWindows,
-  isWOW64,
   localIPv6Hosts,
   mustCall,
-  mustCallAsync,
   mustCallAtLeast,
   mustNotCall,
   nodeProcessAborted,
-  noWarnCode: undefined,
   PIPE,
   platformTimeout,
   printSkipMessage,
@@ -743,6 +753,7 @@ module.exports = {
   skipIf32Bits,
   skipIfEslintMissing,
   skipIfInspectorDisabled,
+  skipIfReportDisabled,
   skipIfWorker,
 
   get localhostIPv6() { return '::1'; },
@@ -792,7 +803,7 @@ module.exports = {
       // use external command
       opensslCli = 'openssl';
     } else {
-      // use command built from sources included in Node.js repository
+      // Use command built from sources included in Node.js repository
       opensslCli = path.join(path.dirname(process.execPath), 'openssl-cli');
     }
 

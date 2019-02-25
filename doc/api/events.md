@@ -581,6 +581,26 @@ being removed. This will not impact the order in which listeners are called,
 but it means that any copies of the listener array as returned by
 the `emitter.listeners()` method will need to be recreated.
 
+When a single function has been added as a handler multiple times for a single
+event (as in the example below), `removeListener()` will remove the most
+recently added instance. In the example the `once('ping')`
+listener is removed:
+
+```js
+const ee = new EventEmitter();
+
+function pong() {
+  console.log('pong');
+}
+
+ee.on('ping', pong);
+ee.once('ping', pong);
+ee.removeListener('ping', pong);
+
+ee.emit('ping');
+ee.emit('ping');
+```
+
 Returns a reference to the `EventEmitter`, so that calls can be chained.
 
 ### emitter.setMaxListeners(n)
@@ -618,14 +638,14 @@ emitter.once('log', () => console.log('log once'));
 const listeners = emitter.rawListeners('log');
 const logFnWrapper = listeners[0];
 
-// logs "log once" to the console and does not unbind the `once` event
+// Logs "log once" to the console and does not unbind the `once` event
 logFnWrapper.listener();
 
-// logs "log once" to the console and removes the listener
+// Logs "log once" to the console and removes the listener
 logFnWrapper();
 
 emitter.on('log', () => console.log('log persistently'));
-// will return a new Array with a single function bound by `.on()` above
+// Will return a new Array with a single function bound by `.on()` above
 const newListeners = emitter.rawListeners('log');
 
 // logs "log persistently" twice

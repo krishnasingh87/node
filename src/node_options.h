@@ -3,27 +3,51 @@
 
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
-#include <string>
-#include <vector>
-#include <unordered_map>
 #include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include "node_constants.h"
+#include "node_mutex.h"
+#include "util.h"
 
 namespace node {
 
-struct HostPort {
-  std::string host_name;
-  int port;
+class HostPort {
+ public:
+  HostPort(const std::string& host_name, int port)
+      : host_name_(host_name), port_(port) {}
+  HostPort(const HostPort&) = default;
+  HostPort& operator=(const HostPort&) = default;
+  HostPort(HostPort&&) = default;
+  HostPort& operator=(HostPort&&) = default;
+
+  void set_host(const std::string& host) { host_name_ = host; }
+
+  void set_port(int port) { port_ = port; }
+
+  const std::string& host() const { return host_name_; }
+
+  int port() const {
+    // TODO(joyeecheung): make port a uint16_t
+    CHECK_GE(port_, 0);
+    return port_;
+  }
 
   void Update(const HostPort& other) {
-    if (!other.host_name.empty()) host_name = other.host_name;
-    if (other.port >= 0) port = other.port;
+    if (!other.host_name_.empty()) host_name_ = other.host_name_;
+    if (other.port_ >= 0) port_ = other.port_;
   }
+
+ private:
+  std::string host_name_;
+  int port_;
 };
 
 class Options {
  public:
   virtual void CheckOptions(std::vector<std::string>* errors) {}
+  virtual ~Options() {}
 };
 
 // These options are currently essentially per-Environment, but it can be nice
@@ -32,45 +56,41 @@ class Options {
 // per-Isolate, rather than per-Environment.
 class DebugOptions : public Options {
  public:
+  DebugOptions() = default;
+  DebugOptions(const DebugOptions&) = default;
+  DebugOptions& operator=(const DebugOptions&) = default;
+  DebugOptions(DebugOptions&&) = default;
+  DebugOptions& operator=(DebugOptions&&) = default;
+
+  // --inspect
   bool inspector_enabled = false;
+  // --debug
   bool deprecated_debug = false;
+  // --inspect-brk
   bool break_first_line = false;
+  // --inspect-brk-node
   bool break_node_first_line = false;
-  HostPort host_port = {"127.0.0.1", -1};
+
   enum { kDefaultInspectorPort = 9229 };
 
-  bool deprecated_invocation() const {
-    return deprecated_debug &&
-      inspector_enabled &&
-      break_first_line;
-  }
-
-  bool invalid_invocation() const {
-    return deprecated_debug && !inspector_enabled;
-  }
+  HostPort host_port{"127.0.0.1", kDefaultInspectorPort};
 
   bool wait_for_connect() const {
     return break_first_line || break_node_first_line;
   }
 
-  const std::string& host() {
-    return host_port.host_name;
-  }
-
-  int port() {
-    return host_port.port < 0 ? kDefaultInspectorPort : host_port.port;
-  }
+  void CheckOptions(std::vector<std::string>* errors) override;
 };
 
 class EnvironmentOptions : public Options {
  public:
-  std::shared_ptr<DebugOptions> debug_options { new DebugOptions() };
   bool abort_on_uncaught_exception = false;
   bool experimental_modules = false;
+  std::string experimental_policy;
   bool experimental_repl_await = false;
   bool experimental_vm_modules = false;
-  bool experimental_worker = false;
   bool expose_internals = false;
+  std::string http_parser = "llhttp";
   bool no_deprecation = false;
   bool no_force_async_hooks_checks = false;
   bool no_warnings = false;
@@ -87,16 +107,28 @@ class EnvironmentOptions : public Options {
 
   bool syntax_check_only = false;
   bool has_eval_string = false;
+#ifdef NODE_REPORT
+  bool experimental_report = false;
+#endif  //  NODE_REPORT
   std::string eval_string;
   bool print_eval = false;
   bool force_repl = false;
+
+#if HAVE_OPENSSL
+  bool tls_v1_0 = false;
+  bool tls_v1_1 = false;
+#endif
 
   std::vector<std::string> preload_modules;
 
   std::vector<std::string> user_argv;
 
   inline DebugOptions* get_debug_options();
-  void CheckOptions(std::vector<std::string>* errors);
+  inline const DebugOptions& debug_options() const;
+  void CheckOptions(std::vector<std::string>* errors) override;
+
+ private:
+  DebugOptions debug_options_;
 };
 
 class PerIsolateOptions : public Options {
@@ -104,8 +136,16 @@ class PerIsolateOptions : public Options {
   std::shared_ptr<EnvironmentOptions> per_env { new EnvironmentOptions() };
   bool track_heap_objects = false;
 
+#ifdef NODE_REPORT
+  bool report_uncaught_exception = false;
+  bool report_on_signal = false;
+  bool report_on_fatalerror = false;
+  std::string report_signal;
+  std::string report_filename;
+  std::string report_directory;
+#endif  //  NODE_REPORT
   inline EnvironmentOptions* get_per_env_options();
-  void CheckOptions(std::vector<std::string>* errors);
+  void CheckOptions(std::vector<std::string>* errors) override;
 };
 
 class PerProcessOptions : public Options {
@@ -115,8 +155,10 @@ class PerProcessOptions : public Options {
   std::string title;
   std::string trace_event_categories;
   std::string trace_event_file_pattern = "node_trace.${rotation}.log";
+  uint64_t max_http_header_size = 8 * 1024;
   int64_t v8_thread_pool_size = 4;
   bool zero_fill_all_buffers = false;
+  bool debug_arraybuffer_allocations = false;
 
   std::vector<std::string> security_reverts;
   bool print_bash_completion = false;
@@ -145,8 +187,12 @@ class PerProcessOptions : public Options {
 #endif
 #endif
 
+#ifdef NODE_REPORT
+  std::vector<std::string> cmdline;
+#endif  //  NODE_REPORT
+
   inline PerIsolateOptions* get_per_isolate_options();
-  void CheckOptions(std::vector<std::string>* errors);
+  void CheckOptions(std::vector<std::string>* errors) override;
 };
 
 // The actual options parser, as opposed to the structs containing them:
@@ -167,6 +213,7 @@ enum OptionType {
   kV8Option,
   kBoolean,
   kInteger,
+  kUInteger,
   kString,
   kHostPort,
   kStringList,
@@ -192,6 +239,10 @@ class OptionsParser {
   void AddOption(const std::string& name,
                  const std::string& help_text,
                  bool Options::* field,
+                 OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
+  void AddOption(const std::string& name,
+                 const std::string& help_text,
+                 uint64_t Options::* field,
                  OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
   void AddOption(const std::string& name,
                  const std::string& help_text,
@@ -230,7 +281,7 @@ class OptionsParser {
   void AddAlias(const std::string& from,
                 const std::initializer_list<std::string>& to);
 
-  // Add implications from some arbitary option to a boolean one, either
+  // Add implications from some arbitrary option to a boolean one, either
   // in a way that makes `from` set `to` to true or to false.
   void Implies(const std::string& from, const std::string& to);
   void ImpliesNot(const std::string& from, const std::string& to);
@@ -239,7 +290,7 @@ class OptionsParser {
   // a method that yields the target options type from this parser's options
   // type.
   template <typename ChildOptions>
-  void Insert(OptionsParser<ChildOptions>* child_options_parser,
+  void Insert(const OptionsParser<ChildOptions>* child_options_parser,
               ChildOptions* (Options::* get_child)());
 
   // Parse a sequence of options into an options struct, a list of
@@ -264,7 +315,7 @@ class OptionsParser {
                      std::vector<std::string>* const v8_args,
                      Options* const options,
                      OptionEnvvarSettings required_env_settings,
-                     std::vector<std::string>* const errors);
+                     std::vector<std::string>* const errors) const;
 
  private:
   // We support the wide variety of different option types by remembering
@@ -275,23 +326,17 @@ class OptionsParser {
    public:
     virtual ~BaseOptionField() {}
     virtual void* LookupImpl(Options* options) const = 0;
-  };
 
-  // Represents a field of type T within `Options`.
-  template <typename T>
-  class OptionField : public BaseOptionField {
-   public:
-    typedef T Type;
-
-    T* Lookup(Options* options) const {
-      return static_cast<T*>(this->LookupImpl(options));
+    template <typename T>
+    inline T* Lookup(Options* options) const {
+      return static_cast<T*>(LookupImpl(options));
     }
   };
 
   // Represents a field of type T within `Options` that can be looked up
   // as a C++ member field.
   template <typename T>
-  class SimpleOptionField : public OptionField<T> {
+  class SimpleOptionField : public BaseOptionField {
    public:
     explicit SimpleOptionField(T Options::* field) : field_(field) {}
     void* LookupImpl(Options* options) const override {
@@ -305,7 +350,7 @@ class OptionsParser {
   template <typename T>
   inline T* Lookup(std::shared_ptr<BaseOptionField> field,
                    Options* options) const {
-    return std::static_pointer_cast<OptionField<T>>(field)->Lookup(options);
+    return field->template Lookup<T>(options);
   }
 
   // An option consists of:
@@ -322,7 +367,7 @@ class OptionsParser {
   // An implied option is composed of the information on where to store a
   // specific boolean value (if another specific option is encountered).
   struct Implication {
-    std::shared_ptr<OptionField<bool>> target_field;
+    std::shared_ptr<BaseOptionField> target_field;
     bool target_value;
   };
 
@@ -355,31 +400,38 @@ class DebugOptionsParser : public OptionsParser<DebugOptions> {
  public:
   DebugOptionsParser();
 
-  static DebugOptionsParser instance;
+  static const DebugOptionsParser instance;
 };
 
 class EnvironmentOptionsParser : public OptionsParser<EnvironmentOptions> {
  public:
   EnvironmentOptionsParser();
 
-  static EnvironmentOptionsParser instance;
+  static const EnvironmentOptionsParser instance;
 };
 
 class PerIsolateOptionsParser : public OptionsParser<PerIsolateOptions> {
  public:
   PerIsolateOptionsParser();
 
-  static PerIsolateOptionsParser instance;
+  static const PerIsolateOptionsParser instance;
 };
 
 class PerProcessOptionsParser : public OptionsParser<PerProcessOptions> {
  public:
   PerProcessOptionsParser();
 
-  static PerProcessOptionsParser instance;
+  static const PerProcessOptionsParser instance;
 };
 
 }  // namespace options_parser
+
+namespace per_process {
+
+extern Mutex cli_options_mutex;
+extern std::shared_ptr<PerProcessOptions> cli_options;
+
+}  // namespace per_process
 }  // namespace node
 
 #endif  // defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS

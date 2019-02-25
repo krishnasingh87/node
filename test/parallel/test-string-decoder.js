@@ -201,7 +201,7 @@ common.expectsError(
   }
 );
 
-// test verifies that StringDecoder will correctly decode the given input
+// Test verifies that StringDecoder will correctly decode the given input
 // buffer with the given encoding to the expected output. It will attempt all
 // possible ways to write() the input buffer, see writeSequences(). The
 // singleSequence allows for easy debugging of a specific sequence which is
@@ -228,7 +228,7 @@ function test(encoding, input, expected, singleSequence) {
         `input: ${input.toString('hex').match(hexNumberRE)}\n` +
         `Write sequence: ${JSON.stringify(sequence)}\n` +
         `Full Decoder State: ${inspect(decoder)}`;
-      assert.fail(output, expected, message);
+      assert.fail(message);
     }
   });
 }
