@@ -19,11 +19,11 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#include "node_errors.h"
+#include "node_contextify.h"
+
 #include "node_internals.h"
 #include "node_watchdog.h"
 #include "base_object-inl.h"
-#include "node_contextify.h"
 #include "node_context_data.h"
 #include "node_errors.h"
 #include "module_wrap.h"
@@ -719,7 +719,7 @@ void ContextifyScript::New(const FunctionCallbackInfo<Value>& args) {
     compile_options = ScriptCompiler::kConsumeCodeCache;
 
   TryCatchScope try_catch(env);
-  Environment::ShouldNotAbortOnUncaughtScope no_abort_scope(env);
+  ShouldNotAbortOnUncaughtScope no_abort_scope(env);
   Context::Scope scope(parsing_context);
 
   MaybeLocal<UnboundScript> v8_script = ScriptCompiler::CompileUnboundScript(
@@ -924,7 +924,7 @@ bool ContextifyScript::EvalMachine(Environment* env,
 
   // Convert the termination exception into a regular exception.
   if (timed_out || received_signal) {
-    if (!env->is_main_thread() && env->is_stopping_worker())
+    if (!env->is_main_thread() && env->is_stopping())
       return false;
     env->isolate()->CancelTerminateExecution();
     // It is possible that execution was terminated by another timeout in

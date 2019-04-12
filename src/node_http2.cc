@@ -12,6 +12,7 @@
 namespace node {
 
 using v8::ArrayBuffer;
+using v8::ArrayBufferView;
 using v8::Boolean;
 using v8::Context;
 using v8::Float64Array;
@@ -1282,9 +1283,6 @@ void Http2Session::HandleHeadersFrame(const nghttp2_frame* frame) {
 
   std::vector<nghttp2_header> headers(stream->move_headers());
 
-  Local<String> name_str;
-  Local<String> value_str;
-
   // The headers are passed in above as a queue of nghttp2_header structs.
   // The following converts that into a JS array with the structure:
   // [name1, value1, name2, value2, name3, value3, name3, value4] and so on.
@@ -1839,8 +1837,8 @@ bool Http2Session::HasWritesOnSocketForStream(Http2Stream* stream) {
 // (typically a net.Socket or tls.TLSSocket). The lifecycle of the two is
 // tightly coupled with all data transfer between the two happening at the
 // C++ layer via the StreamBase API.
-void Http2Session::Consume(Local<External> external) {
-  StreamBase* stream = static_cast<StreamBase*>(external->Value());
+void Http2Session::Consume(Local<Object> stream_obj) {
+  StreamBase* stream = StreamBase::FromObject(stream_obj);
   stream->PushStreamListener(this);
   Debug(this, "i/o stream consumed");
 }
@@ -1870,12 +1868,14 @@ Http2Stream::Http2Stream(Http2Session* session,
       id_(id),
       current_headers_category_(category) {
   MakeWeak();
+  StreamBase::AttachToObject(GetObject());
   statistics_.start_time = uv_hrtime();
 
   // Limit the number of header pairs
   max_header_pairs_ = session->GetMaxHeaderPairs();
-  if (max_header_pairs_ == 0)
-  max_header_pairs_ = DEFAULT_MAX_HEADER_LIST_PAIRS;
+  if (max_header_pairs_ == 0) {
+    max_header_pairs_ = DEFAULT_MAX_HEADER_LIST_PAIRS;
+  }
   current_headers_.reserve(max_header_pairs_);
 
   // Limit the number of header octets
@@ -2429,8 +2429,8 @@ void Http2Session::New(const FunctionCallbackInfo<Value>& args) {
 void Http2Session::Consume(const FunctionCallbackInfo<Value>& args) {
   Http2Session* session;
   ASSIGN_OR_RETURN_UNWRAP(&session, args.Holder());
-  CHECK(args[0]->IsExternal());
-  session->Consume(args[0].As<External>());
+  CHECK(args[0]->IsObject());
+  session->Consume(args[0].As<Object>());
 }
 
 // Destroys the Http2Session instance and renders it unusable
@@ -2483,7 +2483,7 @@ void Http2Session::Request(const FunctionCallbackInfo<Value>& args) {
 // state of the Http2Session, it's simply a notification.
 void Http2Session::Goaway(uint32_t code,
                           int32_t lastStreamID,
-                          uint8_t* data,
+                          const uint8_t* data,
                           size_t len) {
   if (IsDestroyed())
     return;
@@ -2508,16 +2508,13 @@ void Http2Session::Goaway(const FunctionCallbackInfo<Value>& args) {
 
   uint32_t code = args[0]->Uint32Value(context).ToChecked();
   int32_t lastStreamID = args[1]->Int32Value(context).ToChecked();
-  Local<Value> opaqueData = args[2];
-  uint8_t* data = nullptr;
-  size_t length = 0;
+  ArrayBufferViewContents<uint8_t> opaque_data;
 
-  if (Buffer::HasInstance(opaqueData)) {
-    data = reinterpret_cast<uint8_t*>(Buffer::Data(opaqueData));
-    length = Buffer::Length(opaqueData);
+  if (args[2]->IsArrayBufferView()) {
+    opaque_data.Read(args[2].As<ArrayBufferView>());
   }
 
-  session->Goaway(code, lastStreamID, data, length);
+  session->Goaway(code, lastStreamID, opaque_data.data(), opaque_data.length());
 }
 
 // Update accounting of data chunks. This is used primarily to manage timeout
@@ -2771,10 +2768,10 @@ void Http2Session::Ping(const FunctionCallbackInfo<Value>& args) {
 
   // A PING frame may have exactly 8 bytes of payload data. If not provided,
   // then the current hrtime will be used as the payload.
-  uint8_t* payload = nullptr;
-  if (Buffer::HasInstance(args[0])) {
-    payload = reinterpret_cast<uint8_t*>(Buffer::Data(args[0]));
-    CHECK_EQ(Buffer::Length(args[0]), 8);
+  ArrayBufferViewContents<uint8_t, 8> payload;
+  if (args[0]->IsArrayBufferView()) {
+    payload.Read(args[0].As<ArrayBufferView>());
+    CHECK_EQ(payload.length(), 8);
   }
 
   Local<Object> obj;
@@ -2799,7 +2796,7 @@ void Http2Session::Ping(const FunctionCallbackInfo<Value>& args) {
   // the callback will be invoked and a notification sent out to JS land. The
   // notification will include the duration of the ping, allowing the round
   // trip to be measured.
-  ping->Send(payload);
+  ping->Send(payload.data());
   args.GetReturnValue().Set(true);
 }
 
@@ -2871,7 +2868,7 @@ Http2Session::Http2Ping::Http2Ping(Http2Session* session, Local<Object> obj)
       session_(session),
       startTime_(uv_hrtime()) {}
 
-void Http2Session::Http2Ping::Send(uint8_t* payload) {
+void Http2Session::Http2Ping::Send(const uint8_t* payload) {
   uint8_t data[8];
   if (payload == nullptr) {
     memcpy(&data, &startTime_, arraysize(data));
@@ -3012,9 +3009,9 @@ void Initialize(Local<Object> target,
   env->SetProtoMethod(stream, "rstStream", Http2Stream::RstStream);
   env->SetProtoMethod(stream, "refreshState", Http2Stream::RefreshState);
   stream->Inherit(AsyncWrap::GetConstructorTemplate(env));
-  StreamBase::AddMethods<Http2Stream>(env, stream);
+  StreamBase::AddMethods(env, stream);
   Local<ObjectTemplate> streamt = stream->InstanceTemplate();
-  streamt->SetInternalFieldCount(1);
+  streamt->SetInternalFieldCount(StreamBase::kStreamBaseFieldCount);
   env->set_http2stream_constructor_template(streamt);
   target->Set(context,
               FIXED_ONE_BYTE_STRING(env->isolate(), "Http2Stream"),

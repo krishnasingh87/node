@@ -8,6 +8,7 @@ namespace util {
 
 using v8::ALL_PROPERTIES;
 using v8::Array;
+using v8::ArrayBufferView;
 using v8::Boolean;
 using v8::Context;
 using v8::Function;
@@ -174,13 +175,9 @@ void WatchdogHasPendingSigint(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(ret);
 }
 
-void EnqueueMicrotask(const FunctionCallbackInfo<Value>& args) {
-  Environment* env = Environment::GetCurrent(args);
-  Isolate* isolate = env->isolate();
-
-  CHECK(args[0]->IsFunction());
-
-  isolate->EnqueueMicrotask(args[0].As<Function>());
+void ArrayBufferViewHasBuffer(const FunctionCallbackInfo<Value>& args) {
+  CHECK(args[0]->IsArrayBufferView());
+  args.GetReturnValue().Set(args[0].As<ArrayBufferView>()->HasBuffer());
 }
 
 class WeakReference : public BaseObject {
@@ -254,8 +251,7 @@ void Initialize(Local<Object> target,
   env->SetMethodNoSideEffect(target, "watchdogHasPendingSigint",
                              WatchdogHasPendingSigint);
 
-  env->SetMethod(target, "enqueueMicrotask", EnqueueMicrotask);
-  env->SetMethod(target, "triggerFatalException", FatalException);
+  env->SetMethod(target, "arrayBufferViewHasBuffer", ArrayBufferViewHasBuffer);
   Local<Object> constants = Object::New(env->isolate());
   NODE_DEFINE_CONSTANT(constants, ALL_PROPERTIES);
   NODE_DEFINE_CONSTANT(constants, ONLY_WRITABLE);

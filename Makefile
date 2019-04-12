@@ -54,10 +54,9 @@ BUILD_DOWNLOAD_FLAGS ?= --download=all
 BUILD_INTL_FLAGS ?= --with-intl=small-icu
 BUILD_RELEASE_FLAGS ?= $(BUILD_DOWNLOAD_FLAGS) $(BUILD_INTL_FLAGS)
 
-# Default to verbose builds.
-# To do quiet/pretty builds, run `make V=` to set V to an empty string,
-# or set the V environment variable to an empty string.
-V ?= 1
+# Default to quiet/pretty builds.
+# To do verbose builds, run `make V=1` or set the V environment variable.
+V ?= 0
 
 # Use -e to double check in case it's a broken link
 # Use $(PWD) so we can cd to anywhere before calling this
@@ -124,10 +123,10 @@ with-code-cache:
 test-code-cache: with-code-cache
 	$(PYTHON) tools/test.py $(PARALLEL_ARGS) --mode=$(BUILDTYPE_LOWER) code-cache
 
-out/Makefile: common.gypi deps/uv/uv.gyp deps/http_parser/http_parser.gyp \
-              deps/zlib/zlib.gyp deps/v8/gypfiles/toolchain.gypi \
-              deps/v8/gypfiles/features.gypi deps/v8/gypfiles/v8.gyp node.gyp \
-              config.gypi
+out/Makefile: config.gypi common.gypi node.gyp \
+  deps/uv/uv.gyp deps/http_parser/http_parser.gyp deps/zlib/zlib.gyp \
+  tools/v8_gypfiles/toolchain.gypi tools/v8_gypfiles/features.gypi \
+  tools/v8_gypfiles/inspector.gypi tools/v8_gypfiles/v8.gyp
 	$(PYTHON) tools/gyp_node.py -f make
 
 config.gypi: configure configure.py
@@ -1306,9 +1305,7 @@ ifneq ("","$(wildcard tools/pip/site-packages)")
 # Lints the Python code with flake8.
 # Flag the build if there are Python syntax errors or undefined names
 lint-py:
-	PYTHONPATH=tools/pip $(PYTHON) -m flake8 . \
-		--count --show-source --statistics --select=E901,E999,F821,F822,F823 \
-		--exclude=.git,deps,lib,src,test/fixtures,tools/*_macros.py,tools/gyp,tools/inspector_protocol,tools/jinja2,tools/markupsafe,tools/pip
+	PYTHONPATH=tools/pip $(PYTHON) -m flake8 --count --show-source --statistics .
 else
 lint-py:
 	@echo "Python linting with flake8 is not avalible"

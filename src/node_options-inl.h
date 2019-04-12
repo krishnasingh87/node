@@ -28,8 +28,8 @@ EnvironmentOptions* PerIsolateOptions::get_per_env_options() {
 namespace options_parser {
 
 template <typename Options>
-void OptionsParser<Options>::AddOption(const std::string& name,
-                                       const std::string& help_text,
+void OptionsParser<Options>::AddOption(const char* name,
+                                       const char* help_text,
                                        bool Options::* field,
                                        OptionEnvvarSettings env_setting) {
   options_.emplace(name,
@@ -40,8 +40,8 @@ void OptionsParser<Options>::AddOption(const std::string& name,
 }
 
 template <typename Options>
-void OptionsParser<Options>::AddOption(const std::string& name,
-                                       const std::string& help_text,
+void OptionsParser<Options>::AddOption(const char* name,
+                                       const char* help_text,
                                        uint64_t Options::* field,
                                        OptionEnvvarSettings env_setting) {
   options_.emplace(
@@ -53,8 +53,8 @@ void OptionsParser<Options>::AddOption(const std::string& name,
 }
 
 template <typename Options>
-void OptionsParser<Options>::AddOption(const std::string& name,
-                                       const std::string& help_text,
+void OptionsParser<Options>::AddOption(const char* name,
+                                       const char* help_text,
                                        int64_t Options::* field,
                                        OptionEnvvarSettings env_setting) {
   options_.emplace(
@@ -66,8 +66,8 @@ void OptionsParser<Options>::AddOption(const std::string& name,
 }
 
 template <typename Options>
-void OptionsParser<Options>::AddOption(const std::string& name,
-                                       const std::string& help_text,
+void OptionsParser<Options>::AddOption(const char* name,
+                                       const char* help_text,
                                        std::string Options::* field,
                                        OptionEnvvarSettings env_setting) {
   options_.emplace(
@@ -80,8 +80,8 @@ void OptionsParser<Options>::AddOption(const std::string& name,
 
 template <typename Options>
 void OptionsParser<Options>::AddOption(
-    const std::string& name,
-    const std::string& help_text,
+    const char* name,
+    const char* help_text,
     std::vector<std::string> Options::* field,
     OptionEnvvarSettings env_setting) {
   options_.emplace(name, OptionInfo {
@@ -93,8 +93,8 @@ void OptionsParser<Options>::AddOption(
 }
 
 template <typename Options>
-void OptionsParser<Options>::AddOption(const std::string& name,
-                                       const std::string& help_text,
+void OptionsParser<Options>::AddOption(const char* name,
+                                       const char* help_text,
                                        HostPort Options::* field,
                                        OptionEnvvarSettings env_setting) {
   options_.emplace(
@@ -106,16 +106,16 @@ void OptionsParser<Options>::AddOption(const std::string& name,
 }
 
 template <typename Options>
-void OptionsParser<Options>::AddOption(const std::string& name,
-                                       const std::string& help_text,
+void OptionsParser<Options>::AddOption(const char* name,
+                                       const char* help_text,
                                        NoOp no_op_tag,
                                        OptionEnvvarSettings env_setting) {
   options_.emplace(name, OptionInfo{kNoOp, nullptr, env_setting, help_text});
 }
 
 template <typename Options>
-void OptionsParser<Options>::AddOption(const std::string& name,
-                                       const std::string& help_text,
+void OptionsParser<Options>::AddOption(const char* name,
+                                       const char* help_text,
                                        V8Option v8_option_tag,
                                        OptionEnvvarSettings env_setting) {
   options_.emplace(name,
@@ -123,27 +123,27 @@ void OptionsParser<Options>::AddOption(const std::string& name,
 }
 
 template <typename Options>
-void OptionsParser<Options>::AddAlias(const std::string& from,
-                                      const std::string& to) {
+void OptionsParser<Options>::AddAlias(const char* from,
+                                      const char* to) {
   aliases_[from] = { to };
 }
 
 template <typename Options>
-void OptionsParser<Options>::AddAlias(const std::string& from,
+void OptionsParser<Options>::AddAlias(const char* from,
                                       const std::vector<std::string>& to) {
   aliases_[from] = to;
 }
 
 template <typename Options>
 void OptionsParser<Options>::AddAlias(
-    const std::string& from,
+    const char* from,
     const std::initializer_list<std::string>& to) {
   AddAlias(from, std::vector<std::string>(to));
 }
 
 template <typename Options>
-void OptionsParser<Options>::Implies(const std::string& from,
-                                     const std::string& to) {
+void OptionsParser<Options>::Implies(const char* from,
+                                     const char* to) {
   auto it = options_.find(to);
   CHECK_NE(it, options_.end());
   CHECK_EQ(it->second.type, kBoolean);
@@ -153,8 +153,8 @@ void OptionsParser<Options>::Implies(const std::string& from,
 }
 
 template <typename Options>
-void OptionsParser<Options>::ImpliesNot(const std::string& from,
-                                        const std::string& to) {
+void OptionsParser<Options>::ImpliesNot(const char* from,
+                                        const char* to) {
   auto it = options_.find(to);
   CHECK_NE(it, options_.end());
   CHECK_EQ(it->second.type, kBoolean);
@@ -213,15 +213,15 @@ auto OptionsParser<Options>::Convert(
 template <typename Options>
 template <typename ChildOptions>
 void OptionsParser<Options>::Insert(
-    const OptionsParser<ChildOptions>* child_options_parser,
+    const OptionsParser<ChildOptions>& child_options_parser,
     ChildOptions* (Options::* get_child)()) {
-  aliases_.insert(child_options_parser->aliases_.begin(),
-                  child_options_parser->aliases_.end());
+  aliases_.insert(std::begin(child_options_parser.aliases_),
+                  std::end(child_options_parser.aliases_));
 
-  for (const auto& pair : child_options_parser->options_)
+  for (const auto& pair : child_options_parser.options_)
     options_.emplace(pair.first, Convert(pair.second, get_child));
 
-  for (const auto& pair : child_options_parser->implications_)
+  for (const auto& pair : child_options_parser.implications_)
     implications_.emplace(pair.first, Convert(pair.second, get_child));
 }
 

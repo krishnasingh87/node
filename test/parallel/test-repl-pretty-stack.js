@@ -6,7 +6,7 @@ const assert = require('assert');
 const repl = require('repl');
 
 
-function run({ command, expected }) {
+function run({ command, expected, ...extraREPLOptions }) {
   let accum = '';
 
   const inputStream = new ArrayStream();
@@ -19,7 +19,8 @@ function run({ command, expected }) {
     input: inputStream,
     output: outputStream,
     terminal: false,
-    useColors: false
+    useColors: false,
+    ...extraREPLOptions
   });
 
   r.write(`${command}\n`);
@@ -29,7 +30,7 @@ function run({ command, expected }) {
 
 const tests = [
   {
-    // test .load for a file that throws
+    // Test .load for a file that throws.
     command: `.load ${fixtures.path('repl-pretty-stack.js')}`,
     expected: 'Thrown:\nError: Whoops!\n    at repl:9:24\n' +
               '    at d (repl:12:3)\n    at c (repl:9:3)\n' +
@@ -45,10 +46,22 @@ const tests = [
     expected: 'Thrown:\nError: Whoops!\n'
   },
   {
+    command: '(() => { const err = Error(\'Whoops!\'); ' +
+             'err.foo = \'bar\'; throw err; })()',
+    expected: "Thrown:\nError: Whoops!\n    at repl:1:22 {\n  foo: 'bar'\n}\n",
+  },
+  {
+    command: '(() => { const err = Error(\'Whoops!\'); ' +
+             'err.foo = \'bar\'; throw err; })()',
+    expected: 'Thrown:\nError: Whoops!\n    at repl:1:22 {\n  foo: ' +
+              "\u001b[32m'bar'\u001b[39m\n}\n",
+    useColors: true
+  },
+  {
     command: 'foo = bar;',
     expected: 'Thrown:\nReferenceError: bar is not defined\n'
   },
-  // test anonymous IIFE
+  // Test anonymous IIFE.
   {
     command: '(function() { throw new Error(\'Whoops!\'); })()',
     expected: 'Thrown:\nError: Whoops!\n    at repl:1:21\n'

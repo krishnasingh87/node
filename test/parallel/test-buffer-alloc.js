@@ -54,10 +54,10 @@ assert.strictEqual(d.length, 0);
 // Test invalid encoding for Buffer.toString
 assert.throws(() => b.toString('invalid'),
               /Unknown encoding: invalid/);
-// invalid encoding for Buffer.write
+// Invalid encoding for Buffer.write
 assert.throws(() => b.write('test string', 0, 5, 'invalid'),
               /Unknown encoding: invalid/);
-// unsupported arguments for Buffer.write
+// Unsupported arguments for Buffer.write
 assert.throws(() => b.write('test', 'utf8', 0),
               /is no longer supported/);
 
@@ -87,13 +87,13 @@ const outOfRangeError = {
 // Try to write a 0-length string beyond the end of b
 common.expectsError(() => b.write('', 2048), outOfBoundsError);
 
-// throw when writing to negative offset
+// Throw when writing to negative offset
 common.expectsError(() => b.write('a', -1), outOfBoundsError);
 
-// throw when writing past bounds from the pool
+// Throw when writing past bounds from the pool
 common.expectsError(() => b.write('a', 2048), outOfBoundsError);
 
-// throw when writing to negative offset
+// Throw when writing to negative offset
 common.expectsError(() => b.write('a', -1), outOfBoundsError);
 
 // Try to copy 0 bytes worth of data into an empty buffer
@@ -192,7 +192,7 @@ Buffer.alloc(1).write('', 1, 0);
 }
 
 {
-  // also from a non-pooled instance
+  // Also from a non-pooled instance
   const b = Buffer.allocUnsafeSlow(5);
   const c = b.slice(0, 4);
   const d = c.slice(0, 2);
@@ -290,7 +290,7 @@ Buffer.alloc(1).write('', 1, 0);
 assert.strictEqual((Buffer.from('Man')).toString('base64'), 'TWFu');
 
 {
-  // test that regular and URL-safe base64 both work
+  // Test that regular and URL-safe base64 both work
   const expected = [0xff, 0xff, 0xbe, 0xff, 0xef, 0xbf, 0xfb, 0xef, 0xff];
   assert.deepStrictEqual(Buffer.from('//++/++/++//', 'base64'),
                          Buffer.from(expected));
@@ -319,7 +319,7 @@ assert.strictEqual((Buffer.from('Man')).toString('base64'), 'TWFu');
   assert.strictEqual(quote.length, bytesWritten);
   assert.strictEqual(quote, b.toString('ascii', 0, quote.length));
 
-  // check that the base64 decoder ignores whitespace
+  // Check that the base64 decoder ignores whitespace
   const expectedWhite = `${expected.slice(0, 60)} \n` +
                         `${expected.slice(60, 120)} \n` +
                         `${expected.slice(120, 180)} \n` +
@@ -390,7 +390,7 @@ assert.strictEqual(Buffer.from('KioqKioqKioqKioqKioqKioqKio=',
                                'base64').toString(),
                    '*'.repeat(20));
 
-// no padding, not a multiple of 4
+// No padding, not a multiple of 4
 assert.strictEqual(Buffer.from('Kg', 'base64').toString(), '*');
 assert.strictEqual(Buffer.from('Kio', 'base64').toString(), '*'.repeat(2));
 assert.strictEqual(Buffer.from('KioqKg', 'base64').toString(), '*'.repeat(4));
@@ -418,7 +418,7 @@ assert.strictEqual(Buffer.from('KioqKioqKioqKioqKioqKioqKio',
                                'base64').toString(),
                    '*'.repeat(20));
 
-// handle padding graciously, multiple-of-4 or not
+// Handle padding graciously, multiple-of-4 or not
 assert.strictEqual(
   Buffer.from('72INjkR5fchcxk9+VgdGPFJDxUBFR5/rMFsghgxADiw==', 'base64').length,
   32
@@ -537,7 +537,7 @@ assert.strictEqual(Buffer.from('A', 'base64').length, 0);
 
 
 {
-  // test an invalid slice end.
+  // Test an invalid slice end.
   const b = Buffer.from([1, 2, 3, 4, 5]);
   const b2 = b.toString('hex', 1, 10000);
   const b3 = b.toString('hex', 1, 5);
@@ -713,7 +713,7 @@ assert.strictEqual(x.inspect(), '<Buffer 81 a3 66 6f 6f a3 62 61 72>');
 }
 
 {
-  // test offset returns are correct
+  // Test offset returns are correct
   const b = Buffer.allocUnsafe(16);
   assert.strictEqual(b.writeUInt32LE(0, 0), 4);
   assert.strictEqual(b.writeUInt16LE(0, 4), 6);
@@ -737,7 +737,7 @@ assert.strictEqual(x.inspect(), '<Buffer 81 a3 66 6f 6f a3 62 61 72>');
 }
 
 {
-  // test for buffer overrun
+  // Test for buffer overrun
   const buf = Buffer.from([0, 0, 0, 0, 0]); // length: 5
   const sub = buf.slice(0, 4);         // length: 4
   assert.strictEqual(sub.write('12345', 'latin1'), 4);
@@ -747,7 +747,7 @@ assert.strictEqual(x.inspect(), '<Buffer 81 a3 66 6f 6f a3 62 61 72>');
 }
 
 {
-  // test alloc with fill option
+  // Test alloc with fill option
   const buf = Buffer.alloc(5, '800A', 'hex');
   assert.strictEqual(buf[0], 128);
   assert.strictEqual(buf[1], 10);
@@ -762,7 +762,7 @@ assert.strictEqual(x.inspect(), '<Buffer 81 a3 66 6f 6f a3 62 61 72>');
 
 // Call .fill() first, stops valgrind warning about uninitialized memory reads.
 Buffer.allocUnsafe(3.3).fill().toString();
-// throws bad argument error in commit 43cb4ec
+// Throws bad argument error in commit 43cb4ec
 Buffer.alloc(3.3).fill().toString();
 assert.strictEqual(Buffer.allocUnsafe(3.3).length, 3);
 assert.strictEqual(Buffer.from({ length: 3.3 }).length, 3);
@@ -808,7 +808,7 @@ common.expectsError(
   outOfRangeError
 );
 
-// ensure negative values can't get past offset
+// Ensure negative values can't get past offset
 common.expectsError(
   () => Buffer.allocUnsafe(8).writeFloatLE(0.0, -1),
   outOfRangeError
@@ -818,7 +818,7 @@ common.expectsError(
   outOfRangeError
 );
 
-// test for common write(U)IntLE/BE
+// Test for common write(U)IntLE/BE
 {
   let buf = Buffer.allocUnsafe(3);
   buf.writeUIntLE(0x123456, 0, 3);
@@ -967,12 +967,12 @@ common.expectsError(
   });
 
 assert.throws(() => Buffer.from(), {
-  name: 'TypeError [ERR_INVALID_ARG_TYPE]',
+  name: 'TypeError',
   message: 'The first argument must be one of type string, Buffer, ' +
   'ArrayBuffer, Array, or Array-like Object. Received type undefined'
 });
 assert.throws(() => Buffer.from(null), {
-  name: 'TypeError [ERR_INVALID_ARG_TYPE]',
+  name: 'TypeError',
   message: 'The first argument must be one of type string, Buffer, ' +
   'ArrayBuffer, Array, or Array-like Object. Received type object'
 });

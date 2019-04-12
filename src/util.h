@@ -27,12 +27,12 @@
 #include "node_persistent.h"
 #include "v8.h"
 
-#include <assert.h>
-#include <signal.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cassert>
+#include <csignal>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include <functional>  // std::function
 #include <limits>
@@ -96,10 +96,6 @@ struct AssertionInfo {
 [[noreturn]] void Assert(const AssertionInfo& info);
 [[noreturn]] void Abort();
 void DumpBacktrace(FILE* fp);
-
-#define DISALLOW_COPY_AND_ASSIGN(TypeName)                                    \
-  TypeName(const TypeName&) = delete;                                         \
-  TypeName& operator=(const TypeName&) = delete
 
 // Windows 8+ does not like abort() in Release mode
 #ifdef _WIN32
@@ -188,12 +184,14 @@ class ListNode {
   inline void Remove();
   inline bool IsEmpty() const;
 
+  ListNode(const ListNode&) = delete;
+  ListNode& operator=(const ListNode&) = delete;
+
  private:
   template <typename U, ListNode<U> (U::*M)> friend class ListHead;
   friend int GenDebugSymbols();
   ListNode* prev_;
   ListNode* next_;
-  DISALLOW_COPY_AND_ASSIGN(ListNode);
 };
 
 template <typename T, ListNode<T> (T::*M)>
@@ -220,10 +218,12 @@ class ListHead {
   inline Iterator begin() const;
   inline Iterator end() const;
 
+  ListHead(const ListHead&) = delete;
+  ListHead& operator=(const ListHead&) = delete;
+
  private:
   friend int GenDebugSymbols();
   ListNode<T> head_;
-  DISALLOW_COPY_AND_ASSIGN(ListHead);
 };
 
 // The helper is for doing safe downcasts from base types to derived types.
@@ -283,6 +283,10 @@ inline void SwapBytes64(char* data, size_t nbytes);
 // tolower() is locale-sensitive.  Use ToLower() instead.
 inline char ToLower(char c);
 inline std::string ToLower(const std::string& in);
+
+// toupper() is locale-sensitive.  Use ToUpper() instead.
+inline char ToUpper(char c);
+inline std::string ToUpper(const std::string& in);
 
 // strcasecmp() is locale-sensitive.  Use StringEqualNoCase() instead.
 inline bool StringEqualNoCase(const char* a, const char* b);
@@ -415,6 +419,27 @@ class MaybeStackBuffer {
   size_t capacity_;
   T* buf_;
   T buf_st_[kStackStorageSize];
+};
+
+// Provides access to an ArrayBufferView's storage, either the original,
+// or for small data, a copy of it. This object's lifetime is bound to the
+// original ArrayBufferView's lifetime.
+template <typename T, size_t kStackStorageSize = 64>
+class ArrayBufferViewContents {
+ public:
+  ArrayBufferViewContents() {}
+
+  explicit inline ArrayBufferViewContents(v8::Local<v8::Value> value);
+  explicit inline ArrayBufferViewContents(v8::Local<v8::ArrayBufferView> abv);
+  inline void Read(v8::Local<v8::ArrayBufferView> abv);
+
+  inline const T* data() const { return data_; }
+  inline size_t length() const { return length_; }
+
+ private:
+  T stack_storage_[kStackStorageSize];
+  T* data_ = nullptr;
+  size_t length_ = 0;
 };
 
 class Utf8Value : public MaybeStackBuffer<char> {

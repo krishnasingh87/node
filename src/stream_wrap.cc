@@ -31,8 +31,8 @@
 #include "udp_wrap.h"
 #include "util-inl.h"
 
-#include <string.h>  // memcpy()
-#include <limits.h>  // INT_MAX
+#include <cstring>  // memcpy()
+#include <climits>  // INT_MAX
 
 
 namespace node {
@@ -123,6 +123,7 @@ LibuvStreamWrap::LibuvStreamWrap(Environment* env,
                  provider),
       StreamBase(env),
       stream_(stream) {
+  StreamBase::AttachToObject(object);
 }
 
 
@@ -134,10 +135,12 @@ Local<FunctionTemplate> LibuvStreamWrap::GetConstructorTemplate(
     tmpl->SetClassName(
         FIXED_ONE_BYTE_STRING(env->isolate(), "LibuvStreamWrap"));
     tmpl->Inherit(HandleWrap::GetConstructorTemplate(env));
+    tmpl->InstanceTemplate()->SetInternalFieldCount(
+        StreamBase::kStreamBaseFieldCount);
     Local<FunctionTemplate> get_write_queue_size =
         FunctionTemplate::New(env->isolate(),
                               GetWriteQueueSize,
-                              env->as_external(),
+                              env->as_callback_data(),
                               Signature::New(env->isolate(), tmpl));
     tmpl->PrototypeTemplate()->SetAccessorProperty(
         env->write_queue_size_string(),
@@ -145,7 +148,7 @@ Local<FunctionTemplate> LibuvStreamWrap::GetConstructorTemplate(
         Local<FunctionTemplate>(),
         static_cast<PropertyAttribute>(ReadOnly | DontDelete));
     env->SetProtoMethod(tmpl, "setBlocking", SetBlocking);
-    StreamBase::AddMethods<LibuvStreamWrap>(env, tmpl);
+    StreamBase::AddMethods(env, tmpl);
     env->set_libuv_stream_wrap_ctor_template(tmpl);
   }
   return tmpl;

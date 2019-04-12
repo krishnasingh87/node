@@ -35,6 +35,13 @@
       '-Werror=undefined-inline',
     ],
   },
+  # Relevant only for x86.
+  # Refs: https://docs.microsoft.com/en-us/cpp/build/reference/safeseh-image-has-safe-exception-handlers
+  'msvs_settings': {
+    'VCLinkerTool': {
+      'ImageHasSafeExceptionHandlers': 'false',
+    },
+  },
   'conditions': [
     [ 'clang==1', {
       'cflags': [ '-Werror=undefined-inline', ]
@@ -78,15 +85,9 @@
       'dependencies': [ 'deps/v8/gypfiles/d8.gyp:d8' ],
     }],
     [ 'node_use_bundled_v8=="true"', {
-      'conditions': [
-        [ 'build_v8_with_gn=="true"', {
-          'dependencies': ['deps/v8/gypfiles/v8-monolithic.gyp:v8_monolith'],
-        }, {
-          'dependencies': [
-            'deps/v8/gypfiles/v8.gyp:v8',
-            'deps/v8/gypfiles/v8.gyp:v8_libplatform',
-          ],
-        }],
+      'dependencies': [
+        'tools/v8_gypfiles/v8.gyp:v8',
+        'tools/v8_gypfiles/v8.gyp:v8_libplatform',
       ],
     }],
     [ 'node_use_v8_platform=="true"', {
@@ -125,13 +126,13 @@
        target_arch=="ia32" or target_arch=="x32")', {
       'defines': [ 'NODE_ENABLE_VTUNE_PROFILING' ],
       'dependencies': [
-        'deps/v8/gypfiles/v8vtune.gyp:v8_vtune'
+        'tools/v8_gypfiles/v8vtune.gyp:v8_vtune'
       ],
     }],
     [ 'node_no_browser_globals=="true"', {
       'defines': [ 'NODE_NO_BROWSER_GLOBALS' ],
     } ],
-    [ 'node_use_bundled_v8=="true" and v8_postmortem_support=="true" and force_load=="true"', {
+    [ 'node_use_bundled_v8=="true" and v8_postmortem_support==1 and force_load=="true"', {
       'xcode_settings': {
         'OTHER_LDFLAGS': [
           '-Wl,-force_load,<(v8_base)',

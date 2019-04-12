@@ -3,17 +3,19 @@
 #include "inspector_socket_server.h"
 #include "inspector/main_thread_interface.h"
 #include "inspector/node_string.h"
+#include "base_object-inl.h"
 #include "env-inl.h"
 #include "debug_utils.h"
 #include "node.h"
 #include "node_crypto.h"
+#include "node_internals.h"
 #include "node_mutex.h"
 #include "v8-inspector.h"
 #include "util.h"
 #include "zlib.h"
 
 #include <deque>
-#include <string.h>
+#include <cstring>
 #include <vector>
 
 namespace node {
@@ -292,7 +294,7 @@ void InspectorIo::ThreadMain() {
                               script_path, script_name_));
   InspectorSocketServer server(std::move(delegate),
                                &loop,
-                               host_port_->host().c_str(),
+                               host_port_->host(),
                                host_port_->port());
   request_queue_ = queue->handle();
   // Its lifetime is now that of the server delegate

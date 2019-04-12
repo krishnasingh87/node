@@ -477,6 +477,11 @@ parser.add_option('--without-snapshot',
     dest='without_snapshot',
     help=optparse.SUPPRESS_HELP)
 
+parser.add_option('--without-siphash',
+    action='store_true',
+    dest='without_siphash',
+    help=optparse.SUPPRESS_HELP)
+
 parser.add_option('--code-cache-path',
     action='store',
     dest='code_cache_path',
@@ -584,6 +589,10 @@ def warn(msg):
 
 # track if warnings occurred
 warn.warned = False
+
+def info(msg):
+  prefix = '\033[1m\033[32mINFO\033[0m' if os.isatty(1) else 'INFO'
+  print('%s: %s' % (prefix, msg))
 
 def print_verbose(x):
   if not options.verbose:
@@ -721,7 +730,7 @@ def get_gas_version(cc):
 # quite prepared to go that far yet.
 def check_compiler(o):
   if sys.platform == 'win32':
-    if not options.openssl_no_asm:
+    if not options.openssl_no_asm and options.dest_cpu in ('x86', 'x64'):
       nasm_version = get_nasm_version('nasm')
       o['variables']['nasm_version'] = nasm_version
       if nasm_version == 0:
@@ -731,10 +740,8 @@ def check_compiler(o):
   ok, is_clang, clang_version, gcc_version = try_check_compiler(CXX, 'c++')
   if not ok:
     warn('failed to autodetect C++ compiler version (CXX=%s)' % CXX)
-  elif sys.platform.startswith('aix') and gcc_version < (6, 3, 0):
-    warn('C++ compiler too old, need g++ 6.3.0 (CXX=%s)' % CXX)
-  elif clang_version < (3, 4, 2) if is_clang else gcc_version < (4, 9, 4):
-    warn('C++ compiler too old, need g++ 4.9.4 or clang++ 3.4.2 (CXX=%s)' % CXX)
+  elif clang_version < (8, 0, 0) if is_clang else gcc_version < (6, 3, 0):
+    warn('C++ compiler too old, need g++ 6.3.0 or clang++ 8.0.0 (CXX=%s)' % CXX)
 
   ok, is_clang, clang_version, gcc_version = try_check_compiler(CC, 'c')
   if not ok:
@@ -1117,16 +1124,13 @@ def configure_v8(o):
   o['variables']['v8_optimized_debug'] = 0 if options.v8_non_optimized_debug else 1
   o['variables']['v8_random_seed'] = 0  # Use a random seed for hash tables.
   o['variables']['v8_promise_internal_field_count'] = 1 # Add internal field to promises for async hooks.
-  o['variables']['v8_use_snapshot'] = 'false' if options.without_snapshot else 'true'
+  o['variables']['v8_use_siphash'] = 0 if options.without_siphash else 1
+  o['variables']['v8_use_snapshot'] = 0 if options.without_snapshot else 1
   o['variables']['v8_trace_maps'] = 1 if options.trace_maps else 0
   o['variables']['node_use_v8_platform'] = b(not options.without_v8_platform)
   o['variables']['node_use_bundled_v8'] = b(not options.without_bundled_v8)
   o['variables']['force_dynamic_crt'] = 1 if options.shared else 0
   o['variables']['node_enable_d8'] = b(options.enable_d8)
-  # Unconditionally force typed arrays to allocate outside the v8 heap. This
-  # is to prevent memory pointers from being moved around that are returned by
-  # Buffer::Data().
-  o['variables']['v8_typed_array_max_size_in_heap'] = 0
   if options.enable_d8:
     o['variables']['test_isolation_mode'] = 'noop'  # Needed by d8.gyp.
   if options.without_bundled_v8 and options.enable_d8:
@@ -1236,7 +1240,7 @@ def glob_to_var(dir_base, dir_sub, patch_dir):
           patchfile = '%s/%s/%s' % (dir_base, patch_dir, file)
           if os.path.isfile(patchfile):
             srcfile = '%s/%s' % (patch_dir, file)
-            warn('Using floating patch "%s" from "%s"' % (patchfile, dir_base))
+            info('Using floating patch "%s" from "%s"' % (patchfile, dir_base))
         list.append(srcfile)
     break
   return list
@@ -1249,13 +1253,14 @@ def configure_intl(o):
     if not os.access(options.download_path, os.W_OK):
       error('''Cannot write to desired download path.
         Either create it or verify permissions.''')
+    attemptdownload = nodedownload.candownload(auto_downloads, "icu")
     for icu in icus:
       url = icu['url']
       md5 = icu['md5']
       local = url.split('/')[-1]
       targetfile = os.path.join(options.download_path, local)
       if not os.path.isfile(targetfile):
-        if nodedownload.candownload(auto_downloads, "icu"):
+        if attemptdownload:
           nodedownload.retrievefile(url, targetfile)
       else:
         print('Re-using existing %s' % targetfile)
@@ -1640,3 +1645,4 @@ if warn.warned and not options.verbose:
 
 print_verbose("running: \n    " + " ".join(['python', 'tools/gyp_node.py'] + gyp_args))
 run_gyp(gyp_args)
+info('configure completed successfully')

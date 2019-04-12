@@ -1,4 +1,4 @@
-// test the throughput of the fs.WriteStream class.
+// Test the throughput of the fs.WriteStream class.
 'use strict';
 
 const path = require('path');
@@ -38,7 +38,7 @@ function main({ dur, encodingType, size }) {
   var started = false;
   var ended = false;
 
-  var f = fs.createWriteStream(filename);
+  const f = fs.createWriteStream(filename);
   f.on('drain', write);
   f.on('open', write);
   f.on('close', done);

@@ -51,7 +51,6 @@ resources:
 
 * [Questions tagged 'node.js' on StackOverflow][]
 * [#node.js channel on chat.freenode.net][]
-* [Node.js Discord Community](https://discordapp.com/invite/v7rrPdE)
 * [Node.js Slack Community](https://node-js.slack.com/)
   * To register: [nodeslackers.com](http://www.nodeslackers.com/)
 
@@ -184,6 +183,8 @@ For information about the governance of the Node.js project, see
 **Jeremiah Senkpiel** &lt;fishrock123@rocketmail.com&gt;
 * [gabrielschulhof](https://github.com/gabrielschulhof) -
 **Gabriel Schulhof** &lt;gabriel.schulhof@intel.com&gt;
+* [gireeshpunathil](https://github.com/gireeshpunathil) -
+**Gireesh Punathil** &lt;gpunathi@in.ibm.com&gt; (he/him)
 * [joyeecheung](https://github.com/joyeecheung) -
 **Joyee Cheung** &lt;joyeec9h3@gmail.com&gt; (she/her)
 * [mcollina](https://github.com/mcollina) -
@@ -192,8 +193,6 @@ For information about the governance of the Node.js project, see
 **Michael Dawson** &lt;michael_dawson@ca.ibm.com&gt; (he/him)
 * [MylesBorins](https://github.com/MylesBorins) -
 **Myles Borins** &lt;myles.borins@gmail.com&gt; (he/him)
-* [ofrobots](https://github.com/ofrobots) -
-**Ali Ijaz Sheikh** &lt;ofrobots@google.com&gt; (he/him)
 * [rvagg](https://github.com/rvagg) -
 **Rod Vagg** &lt;rod@vagg.org&gt;
 * [targos](https://github.com/targos) -
@@ -225,6 +224,8 @@ For information about the governance of the Node.js project, see
 **Brian White** &lt;mscdex@mscdex.net&gt;
 * [nebrius](https://github.com/nebrius) -
 **Bryan Hughes** &lt;bryan@nebri.us&gt;
+* [ofrobots](https://github.com/ofrobots) -
+**Ali Ijaz Sheikh** &lt;ofrobots@google.com&gt; (he/him)
 * [orangemocha](https://github.com/orangemocha) -
 **Alexis Campailla** &lt;orangemocha@nodejs.org&gt;
 * [piscisaureus](https://github.com/piscisaureus) -
@@ -486,6 +487,8 @@ For information about the governance of the Node.js project, see
 **Yorkie Liu** &lt;yorkiefixer@gmail.com&gt;
 * [yosuke-furukawa](https://github.com/yosuke-furukawa) -
 **Yosuke Furukawa** &lt;yosuke.furukawa@gmail.com&gt;
+* [ZYSzys](https://github.com/ZYSzys) -
+**Yongsheng Zhang** &lt;zyszys98@gmail.com&gt; (he/him)
 
 ### Collaborator Emeriti
 

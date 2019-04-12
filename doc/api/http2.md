@@ -572,12 +572,17 @@ Provides miscellaneous information about the current state of the
 
 An object describing the current status of this `Http2Session`.
 
-#### http2session.settings(settings)
+#### http2session.settings([settings][, callback])
 <!-- YAML
 added: v8.4.0
 -->
 
 * `settings` {HTTP/2 Settings Object}
+* `callback` {Function} Callback that is called once the session is connected or
+  right away if the session is already connected.
+  * `err` {Error|null}
+  * `settings` {HTTP/2 Settings Object} The updated `settings` object.
+  * `duration` {integer}
 
 Updates the current local settings for this `Http2Session` and sends a new
 `SETTINGS` frame to the connected HTTP/2 peer.
@@ -1602,7 +1607,7 @@ default behavior is to destroy the stream.
 
 When the `options.waitForTrailers` option is set, the `'wantTrailers'` event
 will be emitted immediately after queuing the last chunk of payload data to be
-sent. The `http2stream.sendTrilers()` method can then be used to sent trailing
+sent. The `http2stream.sendTrailers()` method can then be used to sent trailing
 header fields to the peer.
 
 When `options.waitForTrailers` is set, the `Http2Stream` will not automatically
@@ -2141,7 +2146,9 @@ changes:
   * `maxReservedRemoteStreams` {number} Sets the maximum number of reserved push
     streams the client will accept at any given time. Once the current number of
     currently reserved push streams exceeds reaches this limit, new push streams
-    sent by the server will be automatically rejected.
+    sent by the server will be automatically rejected. The minimum allowed value
+    is 0. The maximum allowed value is 2<sup>32</sup>-1. A negative value sets
+    this option to the maximum allowed value. **Default:** `200`.
   * `maxSendHeaderBlockLength` {number} Sets the maximum allowed size for a
     serialized, compressed block of headers. Attempts to send headers that
     exceed this limit will result in a `'frameError'` event being emitted
@@ -2230,7 +2237,7 @@ Returns an object containing the default settings for an `Http2Session`
 instance. This method returns a new object instance every time it is called
 so instances returned may be safely modified for use.
 
-### http2.getPackedSettings(settings)
+### http2.getPackedSettings([settings])
 <!-- YAML
 added: v8.4.0
 -->
@@ -2430,7 +2437,7 @@ const client = http2.connect('http://localhost');
 
 client.on('stream', (pushedStream, requestHeaders) => {
   pushedStream.on('push', (responseHeaders) => {
-    // process response headers
+    // Process response headers
   });
   pushedStream.on('data', (chunk) => { /* handle pushed data */ });
 });
@@ -2598,7 +2605,7 @@ const server = createSecureServer(
 ).listen(4443);
 
 function onRequest(req, res) {
-  // detects if it is a HTTPS request or HTTP/2
+  // Detects if it is a HTTPS request or HTTP/2
   const { socket: { alpnProtocol } } = req.httpVersion === '2.0' ?
     req.stream.session : req;
   res.writeHead(200, { 'content-type': 'application/json' });
@@ -3136,7 +3143,7 @@ with any headers passed to [`response.writeHead()`][], with the headers passed
 to [`response.writeHead()`][] given precedence.
 
 ```js
-// returns content-type = text/plain
+// Returns content-type = text/plain
 const server = http2.createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.setHeader('X-Foo', 'bar');
@@ -3221,7 +3228,7 @@ added: v8.4.0
 
 * {string}
 
-Status message is not supported by HTTP/2 (RFC7540 8.1.2.4). It returns
+Status message is not supported by HTTP/2 (RFC 7540 8.1.2.4). It returns
 an empty string.
 
 #### response.stream
@@ -3330,7 +3337,7 @@ with any headers passed to [`response.writeHead()`][], with the headers passed
 to [`response.writeHead()`][] given precedence.
 
 ```js
-// returns content-type = text/plain
+// Returns content-type = text/plain
 const server = http2.createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.setHeader('X-Foo', 'bar');
@@ -3371,9 +3378,9 @@ const obs = new PerformanceObserver((items) => {
   const entry = items.getEntries()[0];
   console.log(entry.entryType);  // prints 'http2'
   if (entry.name === 'Http2Session') {
-    // entry contains statistics about the Http2Session
+    // Entry contains statistics about the Http2Session
   } else if (entry.name === 'Http2Stream') {
-    // entry contains statistics about the Http2Stream
+    // Entry contains statistics about the Http2Stream
   }
 });
 obs.observe({ entryTypes: ['http2'] });

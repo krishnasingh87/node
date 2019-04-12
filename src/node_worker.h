@@ -3,8 +3,9 @@
 
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
-#include "node_messaging.h"
 #include <unordered_map>
+#include "node_messaging.h"
+#include "uv.h"
 
 namespace node {
 namespace worker {
@@ -17,7 +18,8 @@ class Worker : public AsyncWrap {
   Worker(Environment* env,
          v8::Local<v8::Object> wrap,
          const std::string& url,
-         std::shared_ptr<PerIsolateOptions> per_isolate_opts);
+         std::shared_ptr<PerIsolateOptions> per_isolate_opts,
+         std::vector<std::string>&& exec_argv);
   ~Worker() override;
 
   // Run the worker. This is only called from the worker thread.
@@ -31,11 +33,8 @@ class Worker : public AsyncWrap {
   void JoinThread();
 
   void MemoryInfo(MemoryTracker* tracker) const override {
-    tracker->TrackFieldWithSize(
-        "isolate_data", sizeof(IsolateData), "IsolateData");
-    tracker->TrackFieldWithSize("env", sizeof(Environment), "Environment");
-    tracker->TrackField("thread_exit_async", *thread_exit_async_);
     tracker->TrackField("parent_port", parent_port_);
+    tracker->TrackInlineField(&on_thread_finished_, "on_thread_finished_");
   }
 
   SET_MEMORY_INFO_NAME(Worker)
@@ -44,6 +43,9 @@ class Worker : public AsyncWrap {
   bool is_stopped() const;
 
   static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void CloneParentEnvVars(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void SetEnvVars(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void StartThread(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void StopThread(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Ref(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -51,10 +53,13 @@ class Worker : public AsyncWrap {
 
  private:
   void OnThreadStopped();
-
+  void CreateEnvMessagePort(Environment* env);
   const std::string url_;
 
   std::shared_ptr<PerIsolateOptions> per_isolate_opts_;
+  std::vector<std::string> exec_argv_;
+  std::vector<std::string> argv_;
+
   MultiIsolatePlatform* platform_;
   v8::Isolate* isolate_ = nullptr;
   bool profiler_idle_notifier_started_;
@@ -67,20 +72,10 @@ class Worker : public AsyncWrap {
   // This mutex protects access to all variables listed below it.
   mutable Mutex mutex_;
 
-  // Currently only used for telling the parent thread that the child
-  // thread exited.
-  std::unique_ptr<uv_async_t> thread_exit_async_;
-  bool scheduled_on_thread_stopped_ = false;
-
-  // This mutex only protects stopped_. If both locks are acquired, this needs
-  // to be the latter one.
-  mutable Mutex stopped_mutex_;
-  bool stopped_ = true;
-
   bool thread_joined_ = true;
   int exit_code_ = 0;
   uint64_t thread_id_ = -1;
-  uintptr_t stack_base_;
+  uintptr_t stack_base_ = 0;
 
   // Full size of the thread's stack.
   static constexpr size_t kStackSize = 4 * 1024 * 1024;
@@ -88,6 +83,7 @@ class Worker : public AsyncWrap {
   static constexpr size_t kStackBufferSize = 192 * 1024;
 
   std::unique_ptr<MessagePortData> child_port_data_;
+  std::shared_ptr<KVStore> env_vars_;
 
   // The child port is kept alive by the child Environment's persistent
   // handle to it, as long as that child Environment exists.
@@ -95,6 +91,20 @@ class Worker : public AsyncWrap {
   // This is always kept alive because the JS object associated with the Worker
   // instance refers to it via its [kPort] property.
   MessagePort* parent_port_ = nullptr;
+
+  AsyncRequest on_thread_finished_;
+
+  // A raw flag that is used by creator and worker threads to
+  // sync up on pre-mature termination of worker  - while in the
+  // warmup phase.  Once the worker is fully warmed up, use the
+  // async handle of the worker's Environment for the same purpose.
+  bool stopped_ = true;
+
+  // The real Environment of the worker object. It has a lesser
+  // lifespan than the worker object itself - comes to life
+  // when the worker thread creates a new Environment, and gets
+  // destroyed alongwith the worker thread.
+  Environment* env_ = nullptr;
 
   friend class WorkerThreadData;
 };

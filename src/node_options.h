@@ -75,6 +75,12 @@ class DebugOptions : public Options {
 
   HostPort host_port{"127.0.0.1", kDefaultInspectorPort};
 
+  // Used to patch the options as if --inspect-brk is passed.
+  void EnableBreakFirstLine() {
+    inspector_enabled = true;
+    break_first_line = true;
+  }
+
   bool wait_for_connect() const {
     return break_first_line || break_node_first_line;
   }
@@ -85,11 +91,15 @@ class DebugOptions : public Options {
 class EnvironmentOptions : public Options {
  public:
   bool abort_on_uncaught_exception = false;
+  bool experimental_json_modules = false;
   bool experimental_modules = false;
+  std::string es_module_specifier_resolution;
+  std::string module_type;
   std::string experimental_policy;
   bool experimental_repl_await = false;
   bool experimental_vm_modules = false;
   bool expose_internals = false;
+  bool frozen_intrinsics = false;
   std::string http_parser = "llhttp";
   bool no_deprecation = false;
   bool no_force_async_hooks_checks = false;
@@ -114,10 +124,11 @@ class EnvironmentOptions : public Options {
   bool print_eval = false;
   bool force_repl = false;
 
-#if HAVE_OPENSSL
-  bool tls_v1_0 = false;
-  bool tls_v1_1 = false;
-#endif
+  bool tls_min_v1_0 = false;
+  bool tls_min_v1_1 = false;
+  bool tls_min_v1_3 = false;
+  bool tls_max_v1_2 = false;
+  bool tls_max_v1_3 = false;
 
   std::vector<std::string> preload_modules;
 
@@ -229,43 +240,39 @@ class OptionsParser {
   struct NoOp {};
   struct V8Option {};
 
-  // TODO(addaleax): A lot of the `std::string` usage here could be reduced
-  // to simple `const char*`s if it's reasonable to expect the values to be
-  // known at compile-time.
-
   // These methods add a single option to the parser. Optionally, it can be
   // specified whether the option should be allowed from environment variable
   // sources (i.e. NODE_OPTIONS).
-  void AddOption(const std::string& name,
-                 const std::string& help_text,
+  void AddOption(const char* name,
+                 const char* help_text,
                  bool Options::* field,
                  OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
-  void AddOption(const std::string& name,
-                 const std::string& help_text,
+  void AddOption(const char* name,
+                 const char* help_text,
                  uint64_t Options::* field,
                  OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
-  void AddOption(const std::string& name,
-                 const std::string& help_text,
+  void AddOption(const char* name,
+                 const char* help_text,
                  int64_t Options::* field,
                  OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
-  void AddOption(const std::string& name,
-                 const std::string& help_text,
+  void AddOption(const char* name,
+                 const char* help_text,
                  std::string Options::* field,
                  OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
-  void AddOption(const std::string& name,
-                 const std::string& help_text,
+  void AddOption(const char* name,
+                 const char* help_text,
                  std::vector<std::string> Options::* field,
                  OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
-  void AddOption(const std::string& name,
-                 const std::string& help_text,
+  void AddOption(const char* name,
+                 const char* help_text,
                  HostPort Options::* field,
                  OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
-  void AddOption(const std::string& name,
-                 const std::string& help_text,
+  void AddOption(const char* name,
+                 const char* help_text,
                  NoOp no_op_tag,
                  OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
-  void AddOption(const std::string& name,
-                 const std::string& help_text,
+  void AddOption(const char* name,
+                 const char* help_text,
                  V8Option v8_option_tag,
                  OptionEnvvarSettings env_setting = kDisallowedInEnvironment);
 
@@ -276,21 +283,21 @@ class OptionsParser {
   // the option is presented in that form (i.e. with a '=').
   // If `from` has the form "--option-a <arg>", the alias will only be expanded
   // if the option has a non-option argument (not starting with -) following it.
-  void AddAlias(const std::string& from, const std::string& to);
-  void AddAlias(const std::string& from, const std::vector<std::string>& to);
-  void AddAlias(const std::string& from,
+  void AddAlias(const char* from, const char* to);
+  void AddAlias(const char* from, const std::vector<std::string>& to);
+  void AddAlias(const char* from,
                 const std::initializer_list<std::string>& to);
 
   // Add implications from some arbitrary option to a boolean one, either
   // in a way that makes `from` set `to` to true or to false.
-  void Implies(const std::string& from, const std::string& to);
-  void ImpliesNot(const std::string& from, const std::string& to);
+  void Implies(const char* from, const char* to);
+  void ImpliesNot(const char* from, const char* to);
 
   // Insert options from another options parser into this one, along with
   // a method that yields the target options type from this parser's options
   // type.
   template <typename ChildOptions>
-  void Insert(const OptionsParser<ChildOptions>* child_options_parser,
+  void Insert(const OptionsParser<ChildOptions>& child_options_parser,
               ChildOptions* (Options::* get_child)());
 
   // Parse a sequence of options into an options struct, a list of
@@ -310,12 +317,12 @@ class OptionsParser {
   //
   // If `*error` is set, the result of the parsing should be discarded and the
   // contents of any of the argument vectors should be considered undefined.
-  virtual void Parse(std::vector<std::string>* const args,
-                     std::vector<std::string>* const exec_args,
-                     std::vector<std::string>* const v8_args,
-                     Options* const options,
-                     OptionEnvvarSettings required_env_settings,
-                     std::vector<std::string>* const errors) const;
+  void Parse(std::vector<std::string>* const args,
+             std::vector<std::string>* const exec_args,
+             std::vector<std::string>* const v8_args,
+             Options* const options,
+             OptionEnvvarSettings required_env_settings,
+             std::vector<std::string>* const errors) const;
 
  private:
   // We support the wide variety of different option types by remembering
@@ -396,33 +403,12 @@ class OptionsParser {
   friend void GetOptions(const v8::FunctionCallbackInfo<v8::Value>& args);
 };
 
-class DebugOptionsParser : public OptionsParser<DebugOptions> {
- public:
-  DebugOptionsParser();
-
-  static const DebugOptionsParser instance;
-};
-
-class EnvironmentOptionsParser : public OptionsParser<EnvironmentOptions> {
- public:
-  EnvironmentOptionsParser();
-
-  static const EnvironmentOptionsParser instance;
-};
-
-class PerIsolateOptionsParser : public OptionsParser<PerIsolateOptions> {
- public:
-  PerIsolateOptionsParser();
-
-  static const PerIsolateOptionsParser instance;
-};
-
-class PerProcessOptionsParser : public OptionsParser<PerProcessOptions> {
- public:
-  PerProcessOptionsParser();
-
-  static const PerProcessOptionsParser instance;
-};
+using StringVector = std::vector<std::string>;
+template <class OptionsType, class = Options>
+void Parse(
+  StringVector* const args, StringVector* const exec_args,
+  StringVector* const v8_args, OptionsType* const options,
+  OptionEnvvarSettings required_env_settings, StringVector* const errors);
 
 }  // namespace options_parser
 

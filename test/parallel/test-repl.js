@@ -32,10 +32,10 @@ const message = 'Read, Eval, Print Loop';
 const prompt_unix = 'node via Unix socket> ';
 const prompt_tcp = 'node via TCP socket> ';
 
-// absolute path to test/fixtures/a.js
+// Absolute path to test/fixtures/a.js
 const moduleFilename = fixtures.path('a');
 
-// function for REPL to run
+// Function for REPL to run
 global.invoke_me = function(arg) {
   return `invoked ${arg}`;
 };
@@ -48,7 +48,7 @@ async function runReplTests(socket, prompt, tests) {
   let lineBuffer = '';
 
   for (const { send, expect } of tests) {
-    // expect can be a single line or multiple lines
+    // Expect can be a single line or multiple lines
     const expectedLines = Array.isArray(expect) ? expect : [ expect ];
 
     console.error('out:', JSON.stringify(send));
@@ -358,7 +358,7 @@ const errorTests = [
     send: ')',
     expect: 'undefined'
   },
-  // npm prompt error message
+  // `npm` prompt error message.
   {
     send: 'npm install foobar',
     expect: [
@@ -439,15 +439,16 @@ const errorTests = [
     expect: [
       /\.break/,
       /\.clear/,
-      /\.editor/,
       /\.exit/,
       /\.help/,
       /\.load/,
       /\.save/,
+      '',
+      'Press ^C to abort current expression, ^D to exit the repl',
       /'thefourtheye'/
     ]
   },
-  // empty lines in the REPL should be allowed
+  // Empty lines in the REPL should be allowed
   {
     send: '\n\r\n\r\n',
     expect: ''
@@ -533,13 +534,16 @@ const errorTests = [
     send: 'require("internal/repl")',
     expect: [
       'Thrown:',
-      /^{ Error: Cannot find module 'internal\/repl'/,
+      /^Error: Cannot find module 'internal\/repl'/,
       /^Require stack:/,
       /^- <repl>/,
       /^    at .*/,
       /^    at .*/,
       /^    at .*/,
-      /^    at .*/
+      /^    at .*/,
+      "  code: 'MODULE_NOT_FOUND',",
+      "  requireStack: [ '<repl>' ]",
+      '}'
     ]
   },
   // REPL should handle quotes within regexp literal in multiline mode
@@ -675,7 +679,7 @@ const errorTests = [
       /^SyntaxError: /
     ]
   },
-  // bring back the repl to prompt
+  // Bring back the repl to prompt
   {
     send: '.break',
     expect: ''

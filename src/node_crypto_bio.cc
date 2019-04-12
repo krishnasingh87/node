@@ -19,11 +19,12 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#include "base_object-inl.h"
 #include "node_crypto_bio.h"
 #include "openssl/bio.h"
 #include "util-inl.h"
-#include <limits.h>
-#include <string.h>
+#include <climits>
+#include <cstring>
 
 namespace node {
 namespace crypto {
@@ -39,9 +40,7 @@ namespace crypto {
 
 
 BIOPointer NodeBIO::New(Environment* env) {
-  // The const_cast doesn't violate const correctness.  OpenSSL's usage of
-  // BIO_METHOD is effectively const but BIO_new() takes a non-const argument.
-  BIOPointer bio(BIO_new(const_cast<BIO_METHOD*>(GetMethod())));
+  BIOPointer bio(BIO_new(GetMethod()));
   if (bio && env != nullptr)
     NodeBIO::FromBIO(bio.get())->env_ = env;
   return bio;
@@ -429,9 +428,7 @@ char* NodeBIO::PeekWritable(size_t* size) {
   TryAllocateForWrite(*size);
 
   size_t available = write_head_->len_ - write_head_->write_pos_;
-  if (*size != 0 && available > *size)
-    available = *size;
-  else
+  if (*size == 0 || available <= *size)
     *size = available;
 
   return write_head_->data_ + write_head_->write_pos_;

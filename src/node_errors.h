@@ -31,8 +31,6 @@ void FatalException(v8::Isolate* isolate,
                     v8::Local<v8::Value> error,
                     v8::Local<v8::Message> message);
 
-void FatalException(const v8::FunctionCallbackInfo<v8::Value>& args);
-
 // Helpers to construct errors similar to the ones provided by
 // lib/internal/errors.js.
 // Example: with `V(ERR_INVALID_ARG_TYPE, TypeError)`, there will be
@@ -44,16 +42,18 @@ void FatalException(const v8::FunctionCallbackInfo<v8::Value>& args);
   V(ERR_BUFFER_OUT_OF_BOUNDS, RangeError)                                    \
   V(ERR_BUFFER_TOO_LARGE, Error)                                             \
   V(ERR_CANNOT_TRANSFER_OBJECT, TypeError)                                   \
-  V(ERR_CLOSED_MESSAGE_PORT, Error)                                          \
   V(ERR_CONSTRUCT_CALL_REQUIRED, Error)                                      \
   V(ERR_INVALID_ARG_VALUE, TypeError)                                        \
   V(ERR_INVALID_ARG_TYPE, TypeError)                                         \
+  V(ERR_INVALID_MODULE_SPECIFIER, TypeError)                                 \
+  V(ERR_INVALID_PACKAGE_CONFIG, SyntaxError)                                 \
   V(ERR_INVALID_TRANSFER_OBJECT, TypeError)                                  \
   V(ERR_MEMORY_ALLOCATION_FAILED, Error)                                     \
   V(ERR_MISSING_ARGS, TypeError)                                             \
   V(ERR_MISSING_MESSAGE_PORT_IN_TRANSFER_LIST, TypeError)                    \
-  V(ERR_MISSING_MODULE, Error)                                               \
+  V(ERR_MISSING_PASSPHRASE, TypeError)                                       \
   V(ERR_MISSING_PLATFORM_FOR_WORKER, Error)                                  \
+  V(ERR_MODULE_NOT_FOUND, Error)                                             \
   V(ERR_OUT_OF_RANGE, RangeError)                                            \
   V(ERR_SCRIPT_EXECUTION_INTERRUPTED, Error)                                 \
   V(ERR_SCRIPT_EXECUTION_TIMEOUT, Error)                                     \
@@ -88,7 +88,6 @@ void FatalException(const v8::FunctionCallbackInfo<v8::Value>& args);
   V(ERR_BUFFER_CONTEXT_NOT_AVAILABLE,                                        \
     "Buffer is not available for the current Context")                       \
   V(ERR_CANNOT_TRANSFER_OBJECT, "Cannot transfer object of unsupported type")\
-  V(ERR_CLOSED_MESSAGE_PORT, "Cannot send data on closed MessagePort")       \
   V(ERR_CONSTRUCT_CALL_REQUIRED, "Cannot call constructor without `new`")    \
   V(ERR_INVALID_TRANSFER_OBJECT, "Found invalid object in transferList")     \
   V(ERR_MEMORY_ALLOCATION_FAILED, "Failed to allocate memory")               \

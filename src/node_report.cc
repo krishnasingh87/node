@@ -1,46 +1,29 @@
 
 #include "node_report.h"
-#include "ares.h"
 #include "debug_utils.h"
-#include "http_parser.h"
-#include "nghttp2/nghttp2ver.h"
 #include "node_internals.h"
 #include "node_metadata.h"
-#include "zlib.h"
-
-#include <atomic>
-#include <fstream>
 
 #ifdef _WIN32
-#include <Lm.h>
 #include <Windows.h>
-#include <dbghelp.h>
-#include <process.h>
-#include <psapi.h>
-#include <tchar.h>
-#include <cwctype>
-#else
+#else  // !_WIN32
 #include <sys/resource.h>
-// Get the standard printf format macros for C99 stdint types.
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif
 #include <cxxabi.h>
 #include <dlfcn.h>
-#include <inttypes.h>
 #endif
 
-#include <fcntl.h>
-#include <string.h>
-#include <time.h>
+#include <cstring>
+#include <ctime>
+#include <cwctype>
+#include <fstream>
 #include <iomanip>
+#include <climits>  // PATH_MAX
 
-#ifndef _MSC_VER
-#include <strings.h>
-#endif
-
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
+#ifdef _WIN32
+/* MAX_PATH is in characters, not bytes. Make sure we have enough headroom. */
+#define PATH_MAX_BYTES (MAX_PATH * 4)
+#else
+#define PATH_MAX_BYTES (PATH_MAX)
 #endif
 
 #ifndef _WIN32
@@ -52,10 +35,12 @@ constexpr double SEC_PER_MICROS = 1e-6;
 
 namespace report {
 using node::arraysize;
+using node::DiagnosticFilename;
 using node::Environment;
 using node::Mutex;
 using node::NativeSymbolDebuggingContext;
 using node::PerIsolateOptions;
+using node::TIME_TYPE;
 using v8::HeapSpaceStatistics;
 using v8::HeapStatistics;
 using v8::Isolate;
@@ -70,29 +55,22 @@ using v8::Value;
 static void WriteNodeReport(Isolate* isolate,
                             Environment* env,
                             const char* message,
-                            const char* location,
+                            const char* trigger,
                             const std::string& filename,
                             std::ostream& out,
-                            Local<String> stackstr,
-                            TIME_TYPE* tm_struct);
+                            Local<String> stackstr);
 static void PrintVersionInformation(JSONWriter* writer);
 static void PrintJavaScriptStack(JSONWriter* writer,
                                  Isolate* isolate,
                                  Local<String> stackstr,
-                                 const char* location);
+                                 const char* trigger);
 static void PrintNativeStack(JSONWriter* writer);
-#ifndef _WIN32
 static void PrintResourceUsage(JSONWriter* writer);
-#endif
 static void PrintGCStatistics(JSONWriter* writer, Isolate* isolate);
 static void PrintSystemInformation(JSONWriter* writer);
 static void PrintLoadedLibraries(JSONWriter* writer);
 static void PrintComponentVersions(JSONWriter* writer);
 static void PrintRelease(JSONWriter* writer);
-static void LocalTime(TIME_TYPE* tm_struct);
-
-// Global variables
-static std::atomic_int seq = {0};  // sequence number for report filenames
 
 // External function to trigger a report, writing to file.
 // The 'name' parameter is in/out: an input filename is used
@@ -100,49 +78,26 @@ static std::atomic_int seq = {0};  // sequence number for report filenames
 std::string TriggerNodeReport(Isolate* isolate,
                               Environment* env,
                               const char* message,
-                              const char* location,
-                              std::string name,
+                              const char* trigger,
+                              const std::string& name,
                               Local<String> stackstr) {
-  std::ostringstream oss;
   std::string filename;
   std::shared_ptr<PerIsolateOptions> options;
   if (env != nullptr) options = env->isolate_data()->options();
 
-  // Obtain the current time and the pid (platform dependent)
-  TIME_TYPE tm_struct;
-  LocalTime(&tm_struct);
   // Determine the required report filename. In order of priority:
   //   1) supplied on API 2) configured on startup 3) default generated
   if (!name.empty()) {
-    // Filename was specified as API parameter, use that
-    oss << name;
+    // Filename was specified as API parameter.
+    filename = name;
   } else if (env != nullptr && options->report_filename.length() > 0) {
-    // File name was supplied via start-up option, use that
-    oss << options->report_filename;
+    // File name was supplied via start-up option.
+    filename = options->report_filename;
   } else {
-    // Construct the report filename, with timestamp, pid and sequence number
-    oss << "report";
-#ifdef _WIN32
-    oss << "." << std::setfill('0') << std::setw(4) << tm_struct.wYear;
-    oss << std::setfill('0') << std::setw(2) << tm_struct.wMonth;
-    oss << std::setfill('0') << std::setw(2) << tm_struct.wDay;
-    oss << "." << std::setfill('0') << std::setw(2) << tm_struct.wHour;
-    oss << std::setfill('0') << std::setw(2) << tm_struct.wMinute;
-    oss << std::setfill('0') << std::setw(2) << tm_struct.wSecond;
-#else  // UNIX, OSX
-    oss << "." << std::setfill('0') << std::setw(4) << tm_struct.tm_year + 1900;
-    oss << std::setfill('0') << std::setw(2) << tm_struct.tm_mon + 1;
-    oss << std::setfill('0') << std::setw(2) << tm_struct.tm_mday;
-    oss << "." << std::setfill('0') << std::setw(2) << tm_struct.tm_hour;
-    oss << std::setfill('0') << std::setw(2) << tm_struct.tm_min;
-    oss << std::setfill('0') << std::setw(2) << tm_struct.tm_sec;
-#endif
-    oss << "." << uv_os_getpid();
-    oss << "." << std::setfill('0') << std::setw(3) << ++seq;
-    oss << ".json";
+    filename = *DiagnosticFilename(env != nullptr ? env->thread_id() : 0,
+                                   "report", "json");
   }
 
-  filename = oss.str();
   // Open the report file stream for writing. Supports stdout/err,
   // user-specified or (default) generated name
   std::ofstream outfile;
@@ -172,23 +127,19 @@ std::string TriggerNodeReport(Isolate* isolate,
       std::cerr << " (errno: " << errno << ")" << std::endl;
       return "";
     }
-
-    std::cerr << std::endl
-              << "Writing Node.js report to file: " << filename << std::endl;
+    outstream = &outfile;
+    std::cerr << std::endl << "Writing Node.js report to file: " << filename;
   }
 
-  // Pass our stream about by reference, not by copying it.
-  std::ostream& out = outfile.is_open() ? outfile : *outstream;
-
-  WriteNodeReport(
-      isolate, env, message, location, filename, out, stackstr, &tm_struct);
+  WriteNodeReport(isolate, env, message, trigger, filename, *outstream,
+                  stackstr);
 
   // Do not close stdout/stderr, only close files we opened.
   if (outfile.is_open()) {
     outfile.close();
   }
 
-  std::cerr << "Node.js report completed" << std::endl;
+  std::cerr << std::endl << "Node.js report completed" << std::endl;
   return filename;
 }
 
@@ -196,14 +147,10 @@ std::string TriggerNodeReport(Isolate* isolate,
 void GetNodeReport(Isolate* isolate,
                    Environment* env,
                    const char* message,
-                   const char* location,
+                   const char* trigger,
                    Local<String> stackstr,
                    std::ostream& out) {
-  // Obtain the current time and the pid (platform dependent)
-  TIME_TYPE tm_struct;
-  LocalTime(&tm_struct);
-  WriteNodeReport(
-      isolate, env, message, location, "", out, stackstr, &tm_struct);
+  WriteNodeReport(isolate, env, message, trigger, "", out, stackstr);
 }
 
 // Internal function to coordinate and write the various
@@ -211,11 +158,13 @@ void GetNodeReport(Isolate* isolate,
 static void WriteNodeReport(Isolate* isolate,
                             Environment* env,
                             const char* message,
-                            const char* location,
+                            const char* trigger,
                             const std::string& filename,
                             std::ostream& out,
-                            Local<String> stackstr,
-                            TIME_TYPE* tm_struct) {
+                            Local<String> stackstr) {
+  // Obtain the current time and the pid.
+  TIME_TYPE tm_struct;
+  DiagnosticFilename::LocalTime(&tm_struct);
   uv_pid_t pid = uv_os_getpid();
 
   // Save formatting for output stream.
@@ -230,7 +179,7 @@ static void WriteNodeReport(Isolate* isolate,
   writer.json_objectstart("header");
 
   writer.json_keyvalue("event", message);
-  writer.json_keyvalue("location", location);
+  writer.json_keyvalue("trigger", trigger);
   if (!filename.empty())
     writer.json_keyvalue("filename", filename);
   else
@@ -242,23 +191,23 @@ static void WriteNodeReport(Isolate* isolate,
   snprintf(timebuf,
            sizeof(timebuf),
            "%4d-%02d-%02dT%02d:%02d:%02dZ",
-           tm_struct->wYear,
-           tm_struct->wMonth,
-           tm_struct->wDay,
-           tm_struct->wHour,
-           tm_struct->wMinute,
-           tm_struct->wSecond);
+           tm_struct.wYear,
+           tm_struct.wMonth,
+           tm_struct.wDay,
+           tm_struct.wHour,
+           tm_struct.wMinute,
+           tm_struct.wSecond);
   writer.json_keyvalue("dumpEventTime", timebuf);
 #else  // UNIX, OSX
   snprintf(timebuf,
            sizeof(timebuf),
            "%4d-%02d-%02dT%02d:%02d:%02dZ",
-           tm_struct->tm_year + 1900,
-           tm_struct->tm_mon + 1,
-           tm_struct->tm_mday,
-           tm_struct->tm_hour,
-           tm_struct->tm_min,
-           tm_struct->tm_sec);
+           tm_struct.tm_year + 1900,
+           tm_struct.tm_mon + 1,
+           tm_struct.tm_mday,
+           tm_struct.tm_hour,
+           tm_struct.tm_min,
+           tm_struct.tm_sec);
   writer.json_keyvalue("dumpEventTime", timebuf);
   struct timeval ts;
   gettimeofday(&ts, nullptr);
@@ -267,6 +216,14 @@ static void WriteNodeReport(Isolate* isolate,
 #endif
   // Report native process ID
   writer.json_keyvalue("processId", pid);
+
+  {
+    // Report the process cwd.
+    char buf[PATH_MAX_BYTES];
+    size_t cwd_size = sizeof(buf);
+    if (uv_cwd(buf, &cwd_size) == 0)
+      writer.json_keyvalue("cwd", buf);
+  }
 
   // Report out the command line.
   if (!node::per_process::cli_options->cmdline.empty()) {
@@ -282,7 +239,7 @@ static void WriteNodeReport(Isolate* isolate,
   writer.json_objectend();
 
   // Report summary JavaScript stack backtrace
-  PrintJavaScriptStack(&writer, isolate, stackstr, location);
+  PrintJavaScriptStack(&writer, isolate, stackstr, trigger);
 
   // Report native stack backtrace
   PrintNativeStack(&writer);
@@ -291,9 +248,7 @@ static void WriteNodeReport(Isolate* isolate,
   PrintGCStatistics(&writer, isolate);
 
   // Report OS and current thread resource usage
-#ifndef _WIN32
   PrintResourceUsage(&writer);
-#endif
 
   writer.json_arraystart("libuv");
   if (env != nullptr) {
@@ -374,12 +329,12 @@ static void PrintVersionInformation(JSONWriter* writer) {
 static void PrintJavaScriptStack(JSONWriter* writer,
                                  Isolate* isolate,
                                  Local<String> stackstr,
-                                 const char* location) {
+                                 const char* trigger) {
   writer->json_objectstart("javascriptStack");
 
   std::string ss;
-  if ((!strcmp(location, "OnFatalError")) ||
-      (!strcmp(location, "OnUserSignal"))) {
+  if ((!strcmp(trigger, "FatalError")) ||
+      (!strcmp(trigger, "Signal"))) {
     ss = "No stack.\nUnavailable.\n";
   } else {
     String::Utf8Value sv(isolate, stackstr);
@@ -447,8 +402,7 @@ static void PrintGCStatistics(JSONWriter* writer, Isolate* isolate) {
 
   writer->json_objectstart("heapSpaces");
   // Loop through heap spaces
-  size_t i;
-  for (i = 0; i < isolate->NumberOfHeapSpaces() - 1; i++) {
+  for (size_t i = 0; i < isolate->NumberOfHeapSpaces(); i++) {
     isolate->GetHeapSpaceStatistics(&v8_heap_space_stats, i);
     writer->json_objectstart(v8_heap_space_stats.space_name());
     writer->json_keyvalue("memorySize", v8_heap_space_stats.space_size());
@@ -464,25 +418,11 @@ static void PrintGCStatistics(JSONWriter* writer, Isolate* isolate) {
         "available", v8_heap_space_stats.space_available_size());
     writer->json_objectend();
   }
-  isolate->GetHeapSpaceStatistics(&v8_heap_space_stats, i);
-  writer->json_objectstart(v8_heap_space_stats.space_name());
-  writer->json_keyvalue("memorySize", v8_heap_space_stats.space_size());
-  writer->json_keyvalue(
-      "committedMemory", v8_heap_space_stats.physical_space_size());
-  writer->json_keyvalue(
-      "capacity",
-      v8_heap_space_stats.space_used_size() +
-          v8_heap_space_stats.space_available_size());
-  writer->json_keyvalue("used", v8_heap_space_stats.space_used_size());
-  writer->json_keyvalue(
-      "available", v8_heap_space_stats.space_available_size());
-  writer->json_objectend();
+
   writer->json_objectend();
   writer->json_objectend();
 }
 
-#ifndef _WIN32
-// Report resource usage (Linux/OSX only).
 static void PrintResourceUsage(JSONWriter* writer) {
   // Get process uptime in seconds
   uint64_t uptime =
@@ -490,36 +430,37 @@ static void PrintResourceUsage(JSONWriter* writer) {
   if (uptime == 0) uptime = 1;  // avoid division by zero.
 
   // Process and current thread usage statistics
-  struct rusage stats;
+  uv_rusage_t rusage;
   writer->json_objectstart("resourceUsage");
-  if (getrusage(RUSAGE_SELF, &stats) == 0) {
+  if (uv_getrusage(&rusage) == 0) {
     double user_cpu =
-        stats.ru_utime.tv_sec + SEC_PER_MICROS * stats.ru_utime.tv_usec;
+        rusage.ru_utime.tv_sec + SEC_PER_MICROS * rusage.ru_utime.tv_usec;
     double kernel_cpu =
-        stats.ru_utime.tv_sec + SEC_PER_MICROS * stats.ru_utime.tv_usec;
+        rusage.ru_stime.tv_sec + SEC_PER_MICROS * rusage.ru_stime.tv_usec;
     writer->json_keyvalue("userCpuSeconds", user_cpu);
     writer->json_keyvalue("kernelCpuSeconds", kernel_cpu);
     double cpu_abs = user_cpu + kernel_cpu;
     double cpu_percentage = (cpu_abs / uptime) * 100.0;
     writer->json_keyvalue("cpuConsumptionPercent", cpu_percentage);
-    writer->json_keyvalue("maxRss", stats.ru_maxrss * 1024);
+    writer->json_keyvalue("maxRss", rusage.ru_maxrss * 1024);
     writer->json_objectstart("pageFaults");
-    writer->json_keyvalue("IORequired", stats.ru_majflt);
-    writer->json_keyvalue("IONotRequired", stats.ru_minflt);
+    writer->json_keyvalue("IORequired", rusage.ru_majflt);
+    writer->json_keyvalue("IONotRequired", rusage.ru_minflt);
     writer->json_objectend();
     writer->json_objectstart("fsActivity");
-    writer->json_keyvalue("reads", stats.ru_inblock);
-    writer->json_keyvalue("writes", stats.ru_oublock);
+    writer->json_keyvalue("reads", rusage.ru_inblock);
+    writer->json_keyvalue("writes", rusage.ru_oublock);
     writer->json_objectend();
   }
   writer->json_objectend();
 #ifdef RUSAGE_THREAD
+  struct rusage stats;
   if (getrusage(RUSAGE_THREAD, &stats) == 0) {
     writer->json_objectstart("uvthreadResourceUsage");
     double user_cpu =
         stats.ru_utime.tv_sec + SEC_PER_MICROS * stats.ru_utime.tv_usec;
     double kernel_cpu =
-        stats.ru_utime.tv_sec + SEC_PER_MICROS * stats.ru_utime.tv_usec;
+        stats.ru_stime.tv_sec + SEC_PER_MICROS * stats.ru_stime.tv_usec;
     writer->json_keyvalue("userCpuSeconds", user_cpu);
     writer->json_keyvalue("kernelCpuSeconds", kernel_cpu);
     double cpu_abs = user_cpu + kernel_cpu;
@@ -533,7 +474,6 @@ static void PrintResourceUsage(JSONWriter* writer) {
   }
 #endif
 }
-#endif
 
 // Report operating system information.
 static void PrintSystemInformation(JSONWriter* writer) {
@@ -579,7 +519,7 @@ static void PrintSystemInformation(JSONWriter* writer) {
       WideCharToMultiByte(
           CP_UTF8, 0, lpszVariable, -1, str, size, nullptr, nullptr);
       std::string env(str);
-      int sep = env.rfind("=");
+      int sep = env.rfind('=');
       std::string key = env.substr(0, sep);
       std::string value = env.substr(sep + 1);
       writer->json_keyvalue(key, value);
@@ -668,16 +608,6 @@ static void PrintRelease(JSONWriter* writer) {
 #endif  // NODE_HAS_RELEASE_URLS
 
   writer->json_objectend();
-}
-
-static void LocalTime(TIME_TYPE* tm_struct) {
-#ifdef _WIN32
-  GetLocalTime(tm_struct);
-#else  // UNIX, OSX
-  struct timeval time_val;
-  gettimeofday(&time_val, nullptr);
-  localtime_r(&time_val.tv_sec, tm_struct);
-#endif
 }
 
 }  // namespace report

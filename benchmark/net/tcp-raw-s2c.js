@@ -5,9 +5,9 @@
 const common = require('../common.js');
 const util = require('util');
 
-// if there are dur=N and len=N args, then
+// If there are dur=N and len=N args, then
 // run the function with those settings.
-// if not, then queue up a bunch of child processes.
+// If not, then queue up a bunch of child processes.
 const bench = common.createBenchmark(main, {
   len: [102400, 1024 * 1024 * 16],
   type: ['utf', 'asc', 'buf'],
@@ -122,7 +122,7 @@ function main({ dur, len, type }) {
 
       clientHandle.readStart();
 
-      // the meat of the benchmark is right here:
+      // The meat of the benchmark is right here:
       bench.start();
 
       setTimeout(() => {

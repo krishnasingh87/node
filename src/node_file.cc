@@ -36,9 +36,9 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <string.h>
-#include <errno.h>
-#include <limits.h>
+#include <cstring>
+#include <cerrno>
+#include <climits>
 
 #if defined(__MINGW32__) || defined(_MSC_VER)
 # include <io.h>
@@ -53,6 +53,7 @@ namespace fs {
 using v8::Array;
 using v8::BigUint64Array;
 using v8::Context;
+using v8::DontDelete;
 using v8::EscapableHandleScope;
 using v8::Float64Array;
 using v8::Function;
@@ -68,6 +69,8 @@ using v8::Number;
 using v8::Object;
 using v8::ObjectTemplate;
 using v8::Promise;
+using v8::PropertyAttribute;
+using v8::ReadOnly;
 using v8::String;
 using v8::Symbol;
 using v8::Uint32;
@@ -111,6 +114,7 @@ FileHandle::FileHandle(Environment* env, Local<Object> obj, int fd)
       StreamBase(env),
       fd_(fd) {
   MakeWeak();
+  StreamBase::AttachToObject(GetObject());
 }
 
 FileHandle* FileHandle::New(Environment* env, int fd, Local<Object> obj) {
@@ -119,8 +123,8 @@ FileHandle* FileHandle::New(Environment* env, int fd, Local<Object> obj) {
                             .ToLocal(&obj)) {
     return nullptr;
   }
-  v8::PropertyAttribute attr =
-      static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete);
+  PropertyAttribute attr =
+      static_cast<PropertyAttribute>(ReadOnly | DontDelete);
   if (obj->DefineOwnProperty(env->context(),
                              env->fd_string(),
                              Integer::New(env->isolate(), fd),
@@ -340,7 +344,7 @@ int FileHandle::ReadStart() {
                .ToLocal(&wrap_obj)) {
         return UV_EBUSY;
       }
-      read_wrap.reset(new FileHandleReadWrap(this, wrap_obj));
+      read_wrap = std::make_unique<FileHandleReadWrap>(this, wrap_obj);
     }
   }
   int64_t recommended_read = 65536;
@@ -555,7 +559,7 @@ void AfterStringPath(uv_fs_t* req) {
 
   if (after.Proceed()) {
     link = StringBytes::Encode(req_wrap->env()->isolate(),
-                               static_cast<const char*>(req->path),
+                               req->path,
                                req_wrap->encoding(),
                                &error);
     if (link.IsEmpty())
@@ -657,7 +661,7 @@ void AfterScanDirWithTypes(uv_fs_t* req) {
       return req_wrap->Reject(error);
 
     name_v.push_back(filename.ToLocalChecked());
-    type_v.push_back(Integer::New(isolate, ent.type));
+    type_v.emplace_back(Integer::New(isolate, ent.type));
   }
 
   Local<Array> result = Array::New(isolate, 2);
@@ -681,8 +685,8 @@ class FSReqWrapSync {
   ~FSReqWrapSync() { uv_fs_req_cleanup(&req); }
   uv_fs_t req;
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(FSReqWrapSync);
+  FSReqWrapSync(const FSReqWrapSync&) = delete;
+  FSReqWrapSync& operator=(const FSReqWrapSync&) = delete;
 };
 
 // Returns nullptr if the operation fails from the start.
@@ -1231,8 +1235,11 @@ static void RMDir(const FunctionCallbackInfo<Value>& args) {
   }
 }
 
-int MKDirpSync(uv_loop_t* loop, uv_fs_t* req, const std::string& path, int mode,
-               uv_fs_cb cb = nullptr) {
+int MKDirpSync(uv_loop_t* loop,
+               uv_fs_t* req,
+               const std::string& path,
+               int mode,
+               uv_fs_cb cb) {
   FSContinuationData continuation_data(req, mode, cb);
   continuation_data.PushPath(std::move(path));
 
@@ -1284,8 +1291,8 @@ int MKDirpAsync(uv_loop_t* loop,
   FSReqBase* req_wrap = FSReqBase::from_req(req);
   // on the first iteration of algorithm, stash state information.
   if (req_wrap->continuation_data == nullptr) {
-    req_wrap->continuation_data = std::unique_ptr<FSContinuationData>{
-      new FSContinuationData(req, mode, cb)};
+    req_wrap->continuation_data =
+        std::make_unique<FSContinuationData>(req, mode, cb);
     req_wrap->continuation_data->PushPath(std::move(path));
   }
 
@@ -1504,7 +1511,7 @@ static void ReadDir(const FunctionCallbackInfo<Value>& args) {
       name_v.push_back(filename.ToLocalChecked());
 
       if (with_types) {
-        type_v.push_back(Integer::New(isolate, ent.type));
+        type_v.emplace_back(Integer::New(isolate, ent.type));
       }
     }
 
@@ -1658,7 +1665,7 @@ static void WriteBuffer(const FunctionCallbackInfo<Value>& args) {
   const int64_t pos = GET_OFFSET(args[4]);
 
   char* buf = buffer_data + off;
-  uv_buf_t uvbuf = uv_buf_init(const_cast<char*>(buf), len);
+  uv_buf_t uvbuf = uv_buf_init(buf, len);
 
   FSReqBase* req_wrap_async = GetReqWrap(env, args[5]);
   if (req_wrap_async != nullptr) {  // write(fd, buffer, off, len, pos, req)
@@ -1857,7 +1864,7 @@ static void Read(const FunctionCallbackInfo<Value>& args) {
   const int64_t pos = args[4].As<Integer>()->Value();
 
   char* buf = buffer_data + off;
-  uv_buf_t uvbuf = uv_buf_init(const_cast<char*>(buf), len);
+  uv_buf_t uvbuf = uv_buf_init(buf, len);
 
   FSReqBase* req_wrap_async = GetReqWrap(env, args[5]);
   if (req_wrap_async != nullptr) {  // read(fd, buffer, offset, len, pos, req)
@@ -2112,7 +2119,7 @@ static void Mkdtemp(const FunctionCallbackInfo<Value>& args) {
     SyncCall(env, args[3], &req_wrap_sync, "mkdtemp",
              uv_fs_mkdtemp, *tmpl);
     FS_SYNC_TRACE_END(mkdtemp);
-    const char* path = static_cast<const char*>(req_wrap_sync.req.path);
+    const char* path = req_wrap_sync.req.path;
 
     Local<Value> error;
     MaybeLocal<Value> rc =
@@ -2227,11 +2234,11 @@ void Initialize(Local<Object> target,
   env->SetProtoMethod(fd, "close", FileHandle::Close);
   env->SetProtoMethod(fd, "releaseFD", FileHandle::ReleaseFD);
   Local<ObjectTemplate> fdt = fd->InstanceTemplate();
-  fdt->SetInternalFieldCount(1);
+  fdt->SetInternalFieldCount(StreamBase::kStreamBaseFieldCount);
   Local<String> handleString =
        FIXED_ONE_BYTE_STRING(isolate, "FileHandle");
   fd->SetClassName(handleString);
-  StreamBase::AddMethods<FileHandle>(env, fd);
+  StreamBase::AddMethods(env, fd);
   target
       ->Set(context, handleString,
             fd->GetFunction(env->context()).ToLocalChecked())

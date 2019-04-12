@@ -41,7 +41,7 @@ const server = http.createServer(common.mustCall((req, res) => {
   };
 
   const request1 = http.get(requestOptions, common.mustCall((response) => {
-    // assert request2 is queued in the agent
+    // Assert request2 is queued in the agent
     const key = agent.getName(requestOptions);
     assert.strictEqual(agent.requests[key].length, 1);
     response.resume();
@@ -49,7 +49,7 @@ const server = http.createServer(common.mustCall((req, res) => {
       request1.socket.destroy();
 
       response.socket.once('close', common.mustCall(() => {
-        // assert request2 was removed from the queue
+        // Assert request2 was removed from the queue
         assert(!agent.requests[key]);
         process.nextTick(() => {
           // Assert that the same socket was not assigned to request2,

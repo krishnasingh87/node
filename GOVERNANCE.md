@@ -1,9 +1,5 @@
 # Node.js Project Governance
 
-The Node.js project is governed by its Collaborators, including a Technical
-Steering Committee (TSC) which is responsible for high-level guidance of the
-project.
-
 <!-- TOC -->
 
 - [Collaborators](#collaborators)
@@ -18,41 +14,28 @@ project.
 
 ## Collaborators
 
-The [nodejs/node][] GitHub repository is maintained by Node.js Core
-Collaborators. Upon becoming Collaborators, they:
-
-* Become members of the @nodejs/collaborators team
-* Gain individual membership of the Node.js foundation
-
-Their privileges include but are not limited to:
+Node.js Core Collaborators maintain the [nodejs/node][] GitHub repository.
+The GitHub team for Node.js Core Collaborators is @nodejs/collaborators. Their
+privileges include but are not limited to:
 
 * Commit access to the [nodejs/node][] repository
 * Access to the Node.js continuous integration (CI) jobs
 
-Modifications of the contents of the nodejs/node repository are made on
-a collaborative basis. Anybody with a GitHub account may propose a
-modification via pull request and it will be considered by the project
-Collaborators.
+Both Collaborators and non-Collaborators may propose changes to the Node.js
+source code. The mechanism to propose such a change is a GitHub pull request.
+Collaborators are responsible for reviewing and merging (_landing_)
+pull requests.
 
 At least two Collaborators must approve a pull request before the pull request
-lands. (One Collaborator approval is enough if the pull request has been open
+can land. (One Collaborator approval is enough if the pull request has been open
 for more than 7 days.) Approving a pull request indicates that the Collaborator
 accepts responsibility for the change. Approval must be from Collaborators who
 are not authors of the change.
 
-If one or more Collaborators oppose a proposed change, then the change cannot
-be accepted unless:
-
-* Discussions and/or additional changes result in no Collaborators objecting to
-  the change. Previously-objecting Collaborators do not necessarily have to
-  sign off on the change, but they should not be opposed to it.
-* The change is escalated to the TSC and the TSC votes to approve the change.
-  This should only happen if disagreements between Collaborators cannot be
-  resolved through discussion.
-
-Collaborators may opt to elevate significant or controversial modifications to
-the TSC by assigning the `tsc-review` label to a pull request or issue. The
-TSC should serve as the final arbiter where required.
+If a Collaborator opposes a proposed change, then the change cannot land. The
+exception is if the TSC votes to approve the change despite the opposition.
+Usually, involving the TSC is unnecessary. Often, discussions or further changes
+result in Collaborators removing their opposition.
 
 See:
 
@@ -69,9 +52,8 @@ Typical activities of a Collaborator include:
 * Participation in working groups
 * Merging pull requests
 
-The TSC periodically reviews the Collaborator list to identify inactive
-Collaborators. Past Collaborators are typically given _Emeritus_ status. Emeriti
-may request that the TSC restore them to active status.
+The TSC can remove inactive Collaborators or provide them with _Emeritus_
+status. Emeriti may request that the TSC restore them to active status.
 
 ## Technical Steering Committee
 
@@ -83,13 +65,13 @@ The TSC has final authority over this project, including:
 * Contribution policy
 * GitHub repository hosting
 * Conduct guidelines
-* Maintaining the list of additional Collaborators
+* Maintaining the list of Collaborators
 
-The current list of TSC members can be found in
+The current list of TSC members is in
 [the project README](./README.md#current-project-team-members).
 
-The operations of the TSC are governed by the [TSC Charter][] as approved by
-the Node.js Foundation Board of Directors.
+The [TSC Charter][] governs the operations of the TSC. All changes to the
+Charter need approval by the Node.js Board of Directors.
 
 ### TSC Meetings
 
@@ -105,11 +87,9 @@ The intention of the agenda is not to approve or review all patches.
 That should happen continuously on GitHub and be handled by the larger
 group of Collaborators.
 
-Any community member or contributor can ask that something be reviewed
-by the TSC by logging a GitHub issue. Any Collaborator, TSC member, or the
-meeting chair can bring the issue to the TSC's attention by applying the
-`tsc-review` label. If consensus-seeking among TSC members fails for a
-particular issue, it may be added to the TSC meeting agenda by adding the
+Any community member or contributor can ask that something be reviewed by the
+TSC by logging a GitHub issue. If consensus-seeking among TSC members fails for
+a particular issue, it may be added to the TSC meeting agenda by adding the
 `tsc-agenda` label.
 
 Prior to each TSC meeting, the meeting chair will share the agenda with

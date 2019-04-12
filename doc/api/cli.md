@@ -134,6 +134,40 @@ added: v6.0.0
 Enable FIPS-compliant crypto at startup. (Requires Node.js to be built with
 `./configure --openssl-fips`.)
 
+### `--entry-type=type`
+<!-- YAML
+added: REPLACEME
+-->
+
+Used with `--experimental-modules`, this configures Node.js to interpret the
+initial entry point as CommonJS or as an ES module.
+
+Valid values are `"commonjs"` and `"module"`. The default is to infer from
+the file extension and the `"type"` field in the nearest parent `package.json`.
+
+Works for executing a file as well as `--eval`, `--print`, `STDIN`.
+
+### `--es-module-specifier-resolution=mode`
+<!-- YAML
+added: REPLACEME
+-->
+
+To be used in conjunction with `--experimental-modules`. Sets the resolution
+algorithm for resolving specifiers. Valid options are `explicit` and `node`.
+
+The default is `explicit`, which requires providing the full path to a
+module. The `node` mode will enable support for optional file extensions and
+the ability to import a directory that has an index file.
+
+Please see [customizing esm specifier resolution][] for example usage.
+
+### `--experimental-json-modules`
+<!-- YAML
+added: REPLACEME
+-->
+
+Enable experimental JSON support for the ES Module loader.
+
 ### `--experimental-modules`
 <!-- YAML
 added: v8.5.0
@@ -176,6 +210,25 @@ added: v6.0.0
 
 Force FIPS-compliant crypto on startup. (Cannot be disabled from script code.)
 (Same requirements as `--enable-fips`.)
+
+### `--frozen-intrinsics`
+<!-- YAML
+added: v11.12.0
+-->
+
+> Stability: 1 - Experimental
+
+Enable experimental frozen intrinsics like `Array` and `Object`.
+
+Support is currently only provided for the root context and no guarantees are
+currently provided that `global.Array` is indeed the default intrinsic
+reference.
+
+**Code breakage is highly likely with this flag**, especially since limited
+support for subclassing builtins is provided currently due to ECMA-262 bug
+https://github.com/tc39/ecma262/pull/1320.
+
+Both of the above may change in future updates, which will be breaking changes.
 
 ### `--http-parser=library`
 <!-- YAML
@@ -424,21 +477,45 @@ added: v4.0.0
 Specify an alternative default TLS cipher list. Requires Node.js to be built
 with crypto support (default).
 
-### `--tls-v1.0`
+### `--tls-max-v1.2`
 <!-- YAML
 added: REPLACEME
 -->
 
-Enable TLSv1.0 and greater in default [secureProtocol][]. Use for compatibility
-with old TLS clients or servers.
+Set [`tls.DEFAULT_MAX_VERSION`][] to 'TLSv1.2'. Use to disable support for
+TLSv1.3.
 
-### `--tls-v1.1`
+### `--tls-max-v1.3`
 <!-- YAML
 added: REPLACEME
 -->
 
-Enable TLSv1.1 and greater in default [secureProtocol][]. Use for compatibility
+Set default [`tls.DEFAULT_MAX_VERSION`][] to 'TLSv1.3'. Use to enable support
+for TLSv1.3.
+
+### `--tls-min-v1.0`
+<!-- YAML
+added: REPLACEME
+-->
+
+Set default [`tls.DEFAULT_MIN_VERSION`][] to 'TLSv1'. Use for compatibility with
+old TLS clients or servers.
+
+### `--tls-min-v1.1`
+<!-- YAML
+added: REPLACEME
+-->
+
+Set default [`tls.DEFAULT_MIN_VERSION`][] to 'TLSv1.1'. Use for compatibility
 with old TLS clients or servers.
+
+### `--tls-min-v1.3`
+<!-- YAML
+added: REPLACEME
+-->
+
+Set default [`tls.DEFAULT_MIN_VERSION`][] to 'TLSv1.3'. Use to disable support
+for TLSv1.2, which is not as secure as TLSv1.3.
 
 ### `--trace-deprecation`
 <!-- YAML
@@ -630,7 +707,7 @@ added: v0.1.32
 added: v0.3.0
 -->
 
-When set to `1` colors will not be used in the REPL.
+When set, colors will not be used in the REPL.
 
 ### `NODE_EXTRA_CA_CERTS=file`
 <!-- YAML
@@ -687,6 +764,7 @@ Node.js options that are allowed are:
 - `--experimental-report`
 - `--experimental-vm-modules`
 - `--force-fips`
+- `--frozen-intrinsics`
 - `--icu-data-dir`
 - `--inspect`
 - `--inspect-brk`
@@ -747,6 +825,11 @@ unless either the `--pending-deprecation` command line flag, or the
 `NODE_PENDING_DEPRECATION=1` environment variable, is set. Pending deprecations
 are used to provide a kind of selective "early warning" mechanism that
 developers may leverage to detect deprecated API usage.
+
+### `NODE_PENDING_PIPE_INSTANCES=instances`
+
+Set the number of pending pipe instance handles when the pipe server is waiting
+for connections. This setting applies to Windows only.
 
 ### `NODE_PRESERVE_SYMLINKS=1`
 <!-- YAML
@@ -872,14 +955,16 @@ greater than `4` (its current default value). For more information, see the
 [`Buffer`]: buffer.html#buffer_class_buffer
 [`SlowBuffer`]: buffer.html#buffer_class_slowbuffer
 [`process.setUncaughtExceptionCaptureCallback()`]: process.html#process_process_setuncaughtexceptioncapturecallback_fn
+[`tls.DEFAULT_MAX_VERSION`]: tls.html#tls_tls_default_max_version
+[`tls.DEFAULT_MIN_VERSION`]: tls.html#tls_tls_default_min_version
 [Chrome DevTools Protocol]: https://chromedevtools.github.io/devtools-protocol/
 [REPL]: repl.html
 [ScriptCoverage]: https://chromedevtools.github.io/devtools-protocol/tot/Profiler#type-ScriptCoverage
 [V8 JavaScript code coverage]: https://v8project.blogspot.com/2017/12/javascript-code-coverage.html
+[customizing esm specifier resolution]: esm.html#esm_customizing_esm_specifier_resolution_algorithm
 [debugger]: debugger.html
 [debugging security implications]: https://nodejs.org/en/docs/guides/debugging-getting-started/#security-implications
 [emit_warning]: process.html#process_process_emitwarning_warning_type_code_ctor
-[experimental ECMAScript Module]: esm.html#esm_loader_hooks
+[experimental ECMAScript Module]: esm.html#esm_resolve_hook
 [libuv threadpool documentation]: http://docs.libuv.org/en/latest/threadpool.html
 [remote code execution]: https://www.owasp.org/index.php/Code_Injection
-[secureProtocol]: tls.html#tls_tls_createsecurecontext_options

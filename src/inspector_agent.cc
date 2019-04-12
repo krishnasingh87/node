@@ -16,15 +16,15 @@
 
 #include "libplatform/libplatform.h"
 
-#include <string.h>
+#ifdef __POSIX__
+#include <pthread.h>
+#include <climits>  // PTHREAD_STACK_MIN
+#endif  // __POSIX__
+
+#include <cstring>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
-
-#ifdef __POSIX__
-#include <limits.h>  // PTHREAD_STACK_MIN
-#include <pthread.h>
-#endif  // __POSIX__
 
 namespace node {
 namespace inspector {
@@ -236,15 +236,19 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
   }
 
   std::string dispatchProtocolMessage(const StringView& message) {
-    std::unique_ptr<protocol::DictionaryValue> parsed;
+    std::string raw_message = protocol::StringUtil::StringViewToUtf8(message);
+    std::unique_ptr<protocol::DictionaryValue> value =
+        protocol::DictionaryValue::cast(protocol::StringUtil::parseMessage(
+            raw_message, false));
+    int call_id;
     std::string method;
-    node_dispatcher_->getCommandName(
-        protocol::StringUtil::StringViewToUtf8(message), &method, &parsed);
+    node_dispatcher_->parseCommand(value.get(), &call_id, &method);
     if (v8_inspector::V8InspectorSession::canDispatchMethod(
             Utf8ToStringView(method)->string())) {
       session_->dispatchProtocolMessage(message);
     } else {
-      node_dispatcher_->dispatch(std::move(parsed));
+      node_dispatcher_->dispatch(call_id, method, std::move(value),
+                                 raw_message);
     }
     return method;
   }
@@ -284,11 +288,17 @@ class ChannelImpl final : public v8_inspector::V8Inspector::Channel,
 
   void sendProtocolResponse(int callId,
                             std::unique_ptr<Serializable> message) override {
-    sendMessageToFrontend(message->serialize());
+    sendMessageToFrontend(message->serializeToJSON());
   }
   void sendProtocolNotification(
       std::unique_ptr<Serializable> message) override {
-    sendMessageToFrontend(message->serialize());
+    sendMessageToFrontend(message->serializeToJSON());
+  }
+
+  void fallThrough(int callId,
+                   const std::string& method,
+                   const std::string& message) override {
+    DCHECK(false);
   }
 
   std::unique_ptr<protocol::TracingAgent> tracing_agent_;
@@ -718,18 +728,12 @@ bool Agent::Start(const std::string& path,
     return false;
   }
 
-  // TODO(joyeecheung): we should not be using process as a global object
-  // to transport --inspect-brk. Instead, the JS land can get this through
-  // require('internal/options') since it should be set once CLI parsing
-  // is done.
+  // Patch the debug options to implement waitForDebuggerOnStart for
+  // the NodeWorker.enable method.
   if (wait_for_connect) {
-    HandleScope scope(parent_env_->isolate());
-    parent_env_->process_object()->DefineOwnProperty(
-        parent_env_->context(),
-        FIXED_ONE_BYTE_STRING(parent_env_->isolate(), "_breakFirstLine"),
-        True(parent_env_->isolate()),
-        static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontEnum))
-        .FromJust();
+    CHECK(!parent_env_->has_serialized_options());
+    debug_options_.EnableBreakFirstLine();
+    parent_env_->options()->get_debug_options()->EnableBreakFirstLine();
     client_->waitForFrontend();
   }
   return true;
@@ -831,14 +835,16 @@ void Agent::DisableAsyncHook() {
 
 void Agent::ToggleAsyncHook(Isolate* isolate,
                             const node::Persistent<Function>& fn) {
+  CHECK(parent_env_->has_run_bootstrapping_code());
   HandleScope handle_scope(isolate);
   CHECK(!fn.IsEmpty());
   auto context = parent_env_->context();
-  auto result = fn.Get(isolate)->Call(context, Undefined(isolate), 0, nullptr);
-  if (result.IsEmpty()) {
-    FatalError(
-        "node::inspector::Agent::ToggleAsyncHook",
-        "Cannot toggle Inspector's AsyncHook, please report this.");
+  v8::TryCatch try_catch(isolate);
+  USE(fn.Get(isolate)->Call(context, Undefined(isolate), 0, nullptr));
+  if (try_catch.HasCaught()) {
+    PrintCaughtException(isolate, context, try_catch);
+    FatalError("\nnode::inspector::Agent::ToggleAsyncHook",
+               "Cannot toggle Inspector's AsyncHook, please report this.");
   }
 }
 

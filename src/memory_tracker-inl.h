@@ -177,6 +177,13 @@ void MemoryTracker::TrackField(const char* edge_name,
   TrackFieldWithSize(edge_name, value.size() * sizeof(T), "std::basic_string");
 }
 
+template <typename T>
+void MemoryTracker::TrackField(const char* edge_name,
+                               const v8::Eternal<T>& value,
+                               const char* node_name) {
+  TrackField(edge_name, value.Get(isolate_));
+}
+
 template <typename T, typename Traits>
 void MemoryTracker::TrackField(const char* edge_name,
                                const v8::Persistent<T, Traits>& value,
@@ -239,6 +246,13 @@ void MemoryTracker::Track(const MemoryRetainer* retainer,
   CHECK_EQ(CurrentNode(), n);
   CHECK_NE(n->size_, 0);
   PopNode();
+}
+
+void MemoryTracker::TrackInlineField(const MemoryRetainer* retainer,
+                                     const char* edge_name) {
+  Track(retainer, edge_name);
+  CHECK(CurrentNode());
+  CurrentNode()->size_ -= retainer->SelfSize();
 }
 
 MemoryRetainerNode* MemoryTracker::CurrentNode() const {

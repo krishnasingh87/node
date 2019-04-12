@@ -32,10 +32,11 @@
 #include "brotli/decode.h"
 #include "zlib.h"
 
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
+
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
 #include <atomic>
 
 namespace node {
@@ -144,6 +145,9 @@ class ZlibContext : public MemoryRetainer {
     tracker->TrackField("dictionary", dictionary_);
   }
 
+  ZlibContext(const ZlibContext&) = delete;
+  ZlibContext& operator=(const ZlibContext&) = delete;
+
  private:
   CompressionError ErrorForMessage(const char* message) const;
   CompressionError SetDictionary();
@@ -159,8 +163,6 @@ class ZlibContext : public MemoryRetainer {
   std::vector<unsigned char> dictionary_;
 
   z_stream strm_;
-
-  DISALLOW_COPY_AND_ASSIGN(ZlibContext);
 };
 
 // Brotli has different data types for compression and decompression streams,
@@ -173,6 +175,9 @@ class BrotliContext : public MemoryRetainer {
   void SetFlush(int flush);
   void GetAfterWriteOffsets(uint32_t* avail_in, uint32_t* avail_out) const;
   inline void SetMode(node_zlib_mode mode) { mode_ = mode; }
+
+  BrotliContext(const BrotliContext&) = delete;
+  BrotliContext& operator=(const BrotliContext&) = delete;
 
  protected:
   node_zlib_mode mode_ = NONE;
@@ -187,9 +192,6 @@ class BrotliContext : public MemoryRetainer {
   brotli_alloc_func alloc_ = nullptr;
   brotli_free_func free_ = nullptr;
   void* alloc_opaque_ = nullptr;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(BrotliContext);
 };
 
 class BrotliEncoderContext final : public BrotliContext {

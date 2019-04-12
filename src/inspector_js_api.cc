@@ -4,6 +4,8 @@
 #include "v8.h"
 #include "v8-inspector.h"
 
+#include <memory>
+
 namespace node {
 namespace inspector {
 namespace {
@@ -65,8 +67,8 @@ class JSBindingsConnection : public AsyncWrap {
                        : AsyncWrap(env, wrap, PROVIDER_INSPECTORJSBINDING),
                          callback_(env->isolate(), callback) {
     Agent* inspector = env->inspector_agent();
-    session_ = inspector->Connect(std::unique_ptr<JSBindingsSessionDelegate>(
-        new JSBindingsSessionDelegate(env, this)), false);
+    session_ = inspector->Connect(std::make_unique<JSBindingsSessionDelegate>(
+        env, this), false);
   }
 
   void OnMessage(Local<Value> value) {
@@ -271,12 +273,19 @@ void Initialize(Local<Object> target, Local<Value> unused,
                 Local<Context> context, void* priv) {
   Environment* env = Environment::GetCurrent(context);
 
-  Agent* agent = env->inspector_agent();
-  env->SetMethod(target, "consoleCall", InspectorConsoleCall);
+  v8::Local<v8::Function> consoleCallFunc =
+      env->NewFunctionTemplate(InspectorConsoleCall, v8::Local<v8::Signature>(),
+                               v8::ConstructorBehavior::kThrow,
+                               v8::SideEffectType::kHasSideEffect)
+          ->GetFunction(context)
+          .ToLocalChecked();
+  auto name_string = FIXED_ONE_BYTE_STRING(env->isolate(), "consoleCall");
+  target->Set(context, name_string, consoleCallFunc).FromJust();
+  consoleCallFunc->SetName(name_string);
+
   env->SetMethod(
       target, "setConsoleExtensionInstaller", SetConsoleExtensionInstaller);
-  if (agent->WillWaitForConnect())
-    env->SetMethod(target, "callAndPauseOnStart", CallAndPauseOnStart);
+  env->SetMethod(target, "callAndPauseOnStart", CallAndPauseOnStart);
   env->SetMethod(target, "open", Open);
   env->SetMethodNoSideEffect(target, "url", Url);
 
@@ -310,4 +319,4 @@ void Initialize(Local<Object> target, Local<Value> unused,
 }  // namespace node
 
 NODE_MODULE_CONTEXT_AWARE_INTERNAL(inspector,
-                                  node::inspector::Initialize);
+                                  node::inspector::Initialize)

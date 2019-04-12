@@ -69,7 +69,7 @@ const assert = require('assert');
 
   read.on('end', common.mustNotCall('no end event'));
 
-  // error is swallowed by the custom _destroy
+  // Error is swallowed by the custom _destroy
   read.on('error', common.mustNotCall('no error event'));
   read.on('close', common.mustCall());
 
@@ -166,7 +166,7 @@ const assert = require('assert');
 }
 
 {
-  // destroy and destroy callback
+  // Destroy and destroy callback
   const read = new Readable({
     read() {}
   });

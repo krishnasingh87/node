@@ -72,7 +72,7 @@ There are three support tiers:
 For production applications, run Node.js on supported platforms only.
 
 Node.js does not support a platform version if a vendor has expired support
-for it. In other words, Node.js does not support running on End-of-life (EoL)
+for it. In other words, Node.js does not support running on End-of-Life (EoL)
 platforms. This is true regardless of entries in the table below.
 
 | System       | Support type | Version                         | Architectures    | Notes                         |
@@ -80,8 +80,8 @@ platforms. This is true regardless of entries in the table below.
 | GNU/Linux    | Tier 1       | kernel >= 2.6.32, glibc >= 2.12 | x64, arm         |                               |
 | GNU/Linux    | Tier 1       | kernel >= 3.10, glibc >= 2.17   | arm64            |                               |
 | macOS/OS X   | Tier 1       | >= 10.11                        | x64              |                               |
-| Windows      | Tier 1       | >= Windows 7/2008 R2/2012 R2    | x86, x64         | [2](#fn2),[3](#fn3),[4](#fn4) |
-| SmartOS      | Tier 2       | >= 15 < 16.4                    | x86, x64         | [1](#fn1)                     |
+| Windows      | Tier 1       | >= Windows 7/2008 R2/2012 R2    | x86, x64         | [1](#fn1),[2](#fn2),[3](#fn3) |
+| SmartOS      | Tier 2       | >= 16                           | x64              |                               |
 | FreeBSD      | Tier 2       | >= 11                           | x64              |                               |
 | GNU/Linux    | Tier 2       | kernel >= 3.13.0, glibc >= 2.19 | ppc64le >=power8 |                               |
 | AIX          | Tier 2       | >= 7.1 TL04                     | ppc64be >=power7 |                               |
@@ -89,25 +89,16 @@ platforms. This is true regardless of entries in the table below.
 | GNU/Linux    | Experimental | kernel >= 2.6.32, glibc >= 2.12 | x86              | limited CI                    |
 | Linux (musl) | Experimental | musl >= 1.0                     | x64              |                               |
 
-<em id="fn1">1</em>: The gcc4.8-libs package needs to be installed, because node
-  binaries have been built with GCC 4.8, for which runtime libraries are not
-  installed by default. For these node versions, the recommended binaries
-  are the ones available in pkgsrc, not the one available from nodejs.org.
-  Note that the binaries downloaded from the pkgsrc repositories are not
-  officially supported by the Node.js project, and instead are supported
-  by Joyent. SmartOS images >= 16.4 are not supported because
-  GCC 4.8 runtime libraries are not available in their pkgsrc repository
-
-<em id="fn2">2</em>: Tier 1 support for building on Windows is only on 64-bit
+<em id="fn1">1</em>: Tier 1 support for building on Windows is only on 64-bit
   hosts. Support is experimental for 32-bit hosts.
 
-<em id="fn3">3</em>: On Windows, running Node.js in Windows terminal emulators
+<em id="fn2">2</em>: On Windows, running Node.js in Windows terminal emulators
   like `mintty` requires the usage of [winpty](https://github.com/rprichard/winpty)
   for the tty channels to work correctly (e.g. `winpty node.exe script.js`).
   In "Git bash" if you call the node shell alias (`node` without the `.exe`
   extension), `winpty` is used automatically.
 
-<em id="fn4">4</em>: The Windows Subsystem for Linux (WSL) is not directly
+<em id="fn3">3</em>: The Windows Subsystem for Linux (WSL) is not directly
   supported, but the GNU/Linux build process and binaries should work. The
   community will only address issues that reproduce on native GNU/Linux
   systems. Issues that only reproduce on WSL should be reported in the
@@ -416,9 +407,19 @@ Prerequisites:
   and tools which can be included in the global `PATH`.
 * The [NetWide Assembler](http://www.nasm.us/), for OpenSSL assembler modules.
   If not installed in the default location, it needs to be manually added
-  to `PATH`. A build with the `openssl-no-asm` option does not need this.
+  to `PATH`. A build with the `openssl-no-asm` option does not need this, nor
+  does a build targeting ARM64 Windows.
 * **Optional** (to build the MSI): the [WiX Toolset v3.11](http://wixtoolset.org/releases/)
   and the [Wix Toolset Visual Studio 2017 Extension](https://marketplace.visualstudio.com/items?itemName=RobMensching.WixToolsetVisualStudio2017Extension).
+* **Optional** Requirements for compiling for Windows 10 on ARM (ARM64):
+    * ARM64 Windows build machine
+        * Due to a GYP limitation, this is required to run compiled code
+          generation tools (like V8's builtins and mksnapshot tools)
+    * Visual Studio 15.9.0 or newer
+    * Visual Studio optional components
+        * Visual C++ compilers and libraries for ARM64
+        * Visual C++ ATL for ARM64
+    * Windows 10 SDK 10.0.17763.0 or newer
 
 If the path to your build directory contains a space or a non-ASCII character,
 the build will likely fail.

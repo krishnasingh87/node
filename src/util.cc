@@ -19,16 +19,41 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#include <stdio.h>
-#include <sstream>
+#include "util.h"
+
 #include "node_buffer.h"
 #include "node_errors.h"
 #include "node_internals.h"
 #include "string_bytes.h"
 #include "uv.h"
 
+#ifdef _WIN32
+#include <io.h>  // _S_IREAD _S_IWRITE
+#include <time.h>
+#ifndef S_IRUSR
+#define S_IRUSR _S_IREAD
+#endif  // S_IRUSR
+#ifndef S_IWUSR
+#define S_IWUSR _S_IWRITE
+#endif  // S_IWUSR
+#else
+#include <sys/time.h>
+#include <sys/types.h>
+#endif
+
+#include <atomic>
+#include <cstdio>
+#include <iomanip>
+#include <sstream>
+
+static std::atomic_int seq = {0};  // Sequence number for diagnostic filenames.
+
 namespace node {
 
+// Microseconds in a second, as a float.
+#define MICROS_PER_SEC 1e6
+
+using v8::ArrayBufferView;
 using v8::Isolate;
 using v8::Local;
 using v8::String;
@@ -89,11 +114,11 @@ BufferValue::BufferValue(Isolate* isolate, Local<Value> value) {
 
   if (value->IsString()) {
     MakeUtf8String(isolate, value, this);
-  } else if (Buffer::HasInstance(value)) {
-    const size_t len = Buffer::Length(value);
+  } else if (value->IsArrayBufferView()) {
+    const size_t len = value.As<ArrayBufferView>()->ByteLength();
     // Leave place for the terminating '\0' byte.
     AllocateSufficientStorage(len + 1);
-    memcpy(out(), Buffer::Data(value), len);
+    value.As<ArrayBufferView>()->CopyContents(out(), len);
     SetLengthAndZeroTerminate(len);
   } else {
     Invalidate();
@@ -130,6 +155,7 @@ std::vector<std::string> SplitString(const std::string& in, char delim) {
   while (in_stream.good()) {
     std::string item;
     std::getline(in_stream, item, delim);
+    if (item.empty()) continue;
     out.emplace_back(std::move(item));
   }
   return out;
@@ -137,6 +163,110 @@ std::vector<std::string> SplitString(const std::string& in, char delim) {
 
 void ThrowErrStringTooLong(Isolate* isolate) {
   isolate->ThrowException(ERR_STRING_TOO_LONG(isolate));
+}
+
+double GetCurrentTimeInMicroseconds() {
+#ifdef _WIN32
+// The difference between the Unix Epoch and the Windows Epoch in 100-ns ticks.
+#define TICKS_TO_UNIX_EPOCH 116444736000000000LL
+  FILETIME ft;
+  GetSystemTimeAsFileTime(&ft);
+  uint64_t filetime_int =
+      static_cast<uint64_t>(ft.dwHighDateTime) << 32 | ft.dwLowDateTime;
+  // FILETIME is measured in terms of 100 ns. Convert that to 1 us (1000 ns).
+  return (filetime_int - TICKS_TO_UNIX_EPOCH) / 10.;
+#else
+  struct timeval tp;
+  gettimeofday(&tp, nullptr);
+  return MICROS_PER_SEC * tp.tv_sec + tp.tv_usec;
+#endif
+}
+
+int WriteFileSync(const char* path, uv_buf_t buf) {
+  uv_fs_t req;
+  int fd = uv_fs_open(nullptr,
+                      &req,
+                      path,
+                      O_WRONLY | O_CREAT | O_TRUNC,
+                      S_IWUSR | S_IRUSR,
+                      nullptr);
+  uv_fs_req_cleanup(&req);
+  if (fd < 0) {
+    return fd;
+  }
+
+  int err = uv_fs_write(nullptr, &req, fd, &buf, 1, 0, nullptr);
+  uv_fs_req_cleanup(&req);
+  if (err < 0) {
+    return err;
+  }
+
+  err = uv_fs_close(nullptr, &req, fd, nullptr);
+  uv_fs_req_cleanup(&req);
+  return err;
+}
+
+int WriteFileSync(v8::Isolate* isolate,
+                  const char* path,
+                  v8::Local<v8::String> string) {
+  node::Utf8Value utf8(isolate, string);
+  uv_buf_t buf = uv_buf_init(utf8.out(), utf8.length());
+  return WriteFileSync(path, buf);
+}
+
+void DiagnosticFilename::LocalTime(TIME_TYPE* tm_struct) {
+#ifdef _WIN32
+  GetLocalTime(tm_struct);
+#else  // UNIX, OSX
+  struct timeval time_val;
+  gettimeofday(&time_val, nullptr);
+  localtime_r(&time_val.tv_sec, tm_struct);
+#endif
+}
+
+// Defined in node_internals.h
+std::string DiagnosticFilename::MakeFilename(
+    uint64_t thread_id,
+    const char* prefix,
+    const char* ext) {
+  std::ostringstream oss;
+  TIME_TYPE tm_struct;
+  LocalTime(&tm_struct);
+  oss << prefix;
+#ifdef _WIN32
+  oss << "." << std::setfill('0') << std::setw(4) << tm_struct.wYear;
+  oss << std::setfill('0') << std::setw(2) << tm_struct.wMonth;
+  oss << std::setfill('0') << std::setw(2) << tm_struct.wDay;
+  oss << "." << std::setfill('0') << std::setw(2) << tm_struct.wHour;
+  oss << std::setfill('0') << std::setw(2) << tm_struct.wMinute;
+  oss << std::setfill('0') << std::setw(2) << tm_struct.wSecond;
+#else  // UNIX, OSX
+  oss << "."
+            << std::setfill('0')
+            << std::setw(4)
+            << tm_struct.tm_year + 1900;
+  oss << std::setfill('0')
+            << std::setw(2)
+            << tm_struct.tm_mon + 1;
+  oss << std::setfill('0')
+            << std::setw(2)
+            << tm_struct.tm_mday;
+  oss << "."
+            << std::setfill('0')
+            << std::setw(2)
+            << tm_struct.tm_hour;
+  oss << std::setfill('0')
+            << std::setw(2)
+            << tm_struct.tm_min;
+  oss << std::setfill('0')
+            << std::setw(2)
+            << tm_struct.tm_sec;
+#endif
+  oss << "." << uv_os_getpid();
+  oss << "." << thread_id;
+  oss << "." << std::setfill('0') << std::setw(3) << ++seq;
+  oss << "." << ext;
+  return oss.str();
 }
 
 }  // namespace node

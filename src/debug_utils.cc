@@ -19,13 +19,8 @@
 #include <execinfo.h>
 #include <unistd.h>
 #include <sys/mman.h>
-#include <stdio.h>
+#include <cstdio>
 #endif
-
-#else  // __POSIX__
-
-#include <windows.h>
-#include <dbghelp.h>
 
 #endif  // __POSIX__
 

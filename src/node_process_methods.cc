@@ -1,5 +1,4 @@
 #include "base_object-inl.h"
-#include "base_object.h"
 #include "env-inl.h"
 #include "node.h"
 #include "node_errors.h"
@@ -15,8 +14,8 @@
 #include "inspector_io.h"
 #endif
 
-#include <limits.h>  // PATH_MAX
-#include <stdio.h>
+#include <climits>  // PATH_MAX
+#include <cstdio>
 
 #if defined(_MSC_VER)
 #include <direct.h>
@@ -172,6 +171,12 @@ static void Kill(const FunctionCallbackInfo<Value>& args) {
   if (!args[0]->Int32Value(context).To(&pid)) return;
   int sig;
   if (!args[1]->Int32Value(context).To(&sig)) return;
+    // TODO(joyeecheung): white list the signals?
+
+#if HAVE_INSPECTOR
+  profiler::EndStartedProfilers(env);
+#endif
+
   int err = uv_kill(pid, sig);
   args.GetReturnValue().Set(err);
 }
@@ -256,7 +261,7 @@ static void GetActiveRequests(const FunctionCallbackInfo<Value>& args) {
     AsyncWrap* w = req_wrap->GetAsyncWrap();
     if (w->persistent().IsEmpty())
       continue;
-    request_v.push_back(w->GetOwner());
+    request_v.emplace_back(w->GetOwner());
   }
 
   args.GetReturnValue().Set(
@@ -272,7 +277,7 @@ void GetActiveHandles(const FunctionCallbackInfo<Value>& args) {
   for (auto w : *env->handle_wrap_queue()) {
     if (!HandleWrap::HasRef(w))
       continue;
-    handle_v.push_back(w->GetOwner());
+    handle_v.emplace_back(w->GetOwner());
   }
   args.GetReturnValue().Set(
       Array::New(env->isolate(), handle_v.data(), handle_v.size()));
@@ -427,6 +432,7 @@ static void InitializeProcessMethods(Local<Object> target,
   env->SetMethod(target, "dlopen", binding::DLOpen);
   env->SetMethod(target, "reallyExit", ReallyExit);
   env->SetMethodNoSideEffect(target, "uptime", Uptime);
+  env->SetMethod(target, "patchProcessObject", PatchProcessObject);
 }
 
 }  // namespace node

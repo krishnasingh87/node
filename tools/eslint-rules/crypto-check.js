@@ -23,8 +23,8 @@ const bindingModules = cryptoModules.concat(['tls_wrap']);
 module.exports = function(context) {
   const missingCheckNodes = [];
   const requireNodes = [];
-  var commonModuleNode = null;
-  var hasSkipCall = false;
+  let commonModuleNode = null;
+  let hasSkipCall = false;
 
   function testCryptoUsage(node) {
     if (utils.isRequired(node, requireModules) ||
@@ -117,6 +117,6 @@ module.exports = function(context) {
     'CallExpression': (node) => testCryptoUsage(node),
     'IfStatement:exit': (node) => testIfStatement(node),
     'MemberExpression:exit': (node) => testMemberExpression(node),
-    'Program:exit': (node) => reportIfMissingCheck(node)
+    'Program:exit': () => reportIfMissingCheck()
   };
 };

@@ -29,10 +29,9 @@ const os = require('os');
 const { exec, execSync, spawnSync } = require('child_process');
 const util = require('util');
 const tmpdir = require('./tmpdir');
-const {
-  bits,
-  hasIntl
-} = process.binding('config');
+const bits = ['arm64', 'mips', 'mipsel', 'ppc64', 's390x', 'x64']
+  .includes(process.arch) ? 64 : 32;
+const hasIntl = !!process.config.variables.v8_enable_i18n_support;
 const { isMainThread } = require('worker_threads');
 
 // Some tests assume a umask of 0o022 so set that up front. Tests that need a
@@ -49,8 +48,11 @@ const hasCrypto = Boolean(process.versions.openssl);
 
 // Check for flags. Skip this for workers (both, the `cluster` module and
 // `worker_threads`) and child processes.
+// If the binary was built without-ssl then the crypto flags are
+// invalid (bad option). The test itself should handle this case.
 if (process.argv.length === 2 &&
     isMainThread &&
+    hasCrypto &&
     module.parent &&
     require('cluster').isMaster) {
   // The copyright notice is relatively big and the flags could come afterwards.
@@ -75,13 +77,21 @@ if (process.argv.length === 2 &&
     const args = process.execArgv.map((arg) => arg.replace(/_/g, '-'));
     for (const flag of flags) {
       if (!args.includes(flag) &&
-          // If the binary was built without-ssl then the crypto flags are
-          // invalid (bad option). The test itself should handle this case.
-          hasCrypto &&
           // If the binary is build without `intl` the inspect option is
           // invalid. The test itself should handle this case.
           (process.features.inspector || !flag.startsWith('--inspect'))) {
-        throw new Error(`Test has to be started with the flag: '${flag}'`);
+        console.log(
+          'NOTE: The test started as a child_process using these flags:',
+          util.inspect(flags)
+        );
+        const args = [...flags, ...process.execArgv, ...process.argv.slice(1)];
+        const options = { encoding: 'utf8', stdio: 'inherit' };
+        const result = spawnSync(process.execPath, args, options);
+        if (result.signal) {
+          process.kill(0, result.signal);
+        } else {
+          process.exit(result.status);
+        }
       }
     }
   }
@@ -236,7 +246,7 @@ function platformTimeout(ms) {
     ms = multipliers.two * ms;
 
   if (isAIX)
-    return multipliers.two * ms; // default localhost speed is slower on AIX
+    return multipliers.two * ms; // Default localhost speed is slower on AIX
 
   if (process.arch !== 'arm')
     return ms;
@@ -259,20 +269,12 @@ let knownGlobals = [
   global,
   setImmediate,
   setInterval,
-  setTimeout
+  setTimeout,
+  queueMicrotask,
 ];
 
 if (global.gc) {
   knownGlobals.push(global.gc);
-}
-
-if (global.DTRACE_HTTP_SERVER_RESPONSE) {
-  knownGlobals.push(DTRACE_HTTP_SERVER_RESPONSE);
-  knownGlobals.push(DTRACE_HTTP_SERVER_REQUEST);
-  knownGlobals.push(DTRACE_HTTP_CLIENT_RESPONSE);
-  knownGlobals.push(DTRACE_HTTP_CLIENT_REQUEST);
-  knownGlobals.push(DTRACE_NET_STREAM_END);
-  knownGlobals.push(DTRACE_NET_SERVER_CONNECTION);
 }
 
 if (process.env.NODE_TEST_KNOWN_GLOBALS) {
@@ -503,7 +505,11 @@ function _expectWarning(name, expected, code) {
   return mustCall((warning) => {
     const [ message, code ] = expected.shift();
     assert.strictEqual(warning.name, name);
-    assert.strictEqual(warning.message, message);
+    if (typeof message === 'string') {
+      assert.strictEqual(warning.message, message);
+    } else {
+      assert(message.test(warning.message));
+    }
     assert.strictEqual(warning.code, code);
   }, expected.length);
 }
@@ -624,7 +630,7 @@ function skipIfInspectorDisabled() {
 
 function skipIfReportDisabled() {
   if (!process.config.variables.node_report) {
-    skip('Node Report is disabled');
+    skip('Diagnostic reporting is disabled');
   }
 }
 
@@ -800,7 +806,7 @@ module.exports = {
     if (opensslCli !== null) return opensslCli;
 
     if (process.config.variables.node_shared_openssl) {
-      // use external command
+      // Use external command
       opensslCli = 'openssl';
     } else {
       // Use command built from sources included in Node.js repository
@@ -811,7 +817,7 @@ module.exports = {
 
     const opensslCmd = spawnSync(opensslCli, ['version']);
     if (opensslCmd.status !== 0 || opensslCmd.error !== undefined) {
-      // openssl command cannot be executed
+      // OpenSSL command cannot be executed
       opensslCli = false;
     }
     return opensslCli;

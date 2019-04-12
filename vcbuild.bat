@@ -1,5 +1,9 @@
 @if not defined DEBUG_HELPER @ECHO OFF
 
+:: Other scripts rely on the environment variables set in this script, so we
+:: explicitly allow them to persist in the calling shell.
+endlocal
+
 if /i "%1"=="help" goto help
 if /i "%1"=="--help" goto help
 if /i "%1"=="-help" goto help
@@ -58,6 +62,7 @@ set no_cctest=
 set cctest=
 set openssl_no_asm=
 set doc=
+set extra_msbuild_args=
 
 :next-arg
 if "%1"=="" goto args-done
@@ -67,6 +72,7 @@ if /i "%1"=="clean"         set target=Clean&goto arg-ok
 if /i "%1"=="ia32"          set target_arch=x86&goto arg-ok
 if /i "%1"=="x86"           set target_arch=x86&goto arg-ok
 if /i "%1"=="x64"           set target_arch=x64&goto arg-ok
+if /i "%1"=="arm64"         set target_arch=arm64&goto arg-ok
 if /i "%1"=="vs2017"        set target_env=vs2017&goto arg-ok
 if /i "%1"=="noprojgen"     set noprojgen=1&goto arg-ok
 if /i "%1"=="projgen"       set projgen=1&goto arg-ok
@@ -130,6 +136,7 @@ if /i "%1"=="no-cctest"     set no_cctest=1&goto arg-ok
 if /i "%1"=="cctest"        set cctest=1&goto arg-ok
 if /i "%1"=="openssl-no-asm"   set openssl_no_asm=1&goto arg-ok
 if /i "%1"=="doc"           set doc=1&goto arg-ok
+if /i "%1"=="binlog"        set extra_msbuild_args=/binaryLogger:%config%\node.binlog&goto arg-ok
 
 echo Error: invalid command line option `%1`.
 exit /b 1
@@ -192,7 +199,8 @@ if "%target%"=="Clean" rmdir /S /Q %~dp0deps\icu
 call tools\msvs\find_python.cmd
 if errorlevel 1 goto :exit
 
-if not defined openssl_no_asm call tools\msvs\find_nasm.cmd
+REM NASM is only needed on IA32 and x86_64.
+if not defined openssl_no_asm if "%target_arch%" NEQ "arm64" call tools\msvs\find_nasm.cmd
 if errorlevel 1 echo Could not find NASM, install it or build with openssl-no-asm. See BUILDING.md.
 
 call :getnodeversion || exit /b 1
@@ -231,7 +239,7 @@ if defined msi (
     goto msbuild-not-found
   )
   if not exist "%VCINSTALLDIR%\..\MSBuild\Microsoft\WiX" (
-    echo Failed to find the Wix Toolset Visual Studio 2017 Extension
+    echo Failed to find the WiX Toolset Visual Studio 2017 Extension
     goto msbuild-not-found
   )
 )
@@ -245,6 +253,7 @@ set vcvars_call="%VCINSTALLDIR%\Auxiliary\Build\vcvarsall.bat" %vcvarsall_arg%
 echo calling: %vcvars_call%
 call %vcvars_call%
 if errorlevel 1 goto msbuild-not-found
+if defined DEBUG_HELPER @ECHO ON
 :found_vs2017
 echo Found MSVS version %VisualStudioVersion%
 set GYP_MSVS_VERSION=2017
@@ -256,10 +265,6 @@ echo Failed to find a suitable Visual Studio installation.
 echo Try to run in a "Developer Command Prompt" or consult
 echo https://github.com/nodejs/node/blob/master/BUILDING.md#windows-1
 goto exit
-
-:wix-not-found
-echo Build skipped. To generate installer, you need to install Wix.
-goto install-doctools
 
 :msbuild-found
 
@@ -303,13 +308,15 @@ set "msbcpu=/m:2"
 if "%NUMBER_OF_PROCESSORS%"=="1" set "msbcpu=/m:1"
 set "msbplatform=Win32"
 if "%target_arch%"=="x64" set "msbplatform=x64"
+if "%target_arch%"=="arm64" set "msbplatform=ARM64"
 if "%target%"=="Build" (
   if defined no_cctest set target=rename_node_bin_win
   if "%test_args%"=="" set target=rename_node_bin_win
   if defined cctest set target="Build"
 )
 if "%target%"=="rename_node_bin_win" if exist "%config%\cctest.exe" del "%config%\cctest.exe"
-msbuild node.sln %msbcpu% /t:%target% /p:Configuration=%config% /p:Platform=%msbplatform% /clp:NoItemAndPropertyList;Verbosity=minimal /nologo
+if defined msbuild_args set "extra_msbuild_args=%extra_msbuild_args% %msbuild_args%"
+msbuild node.sln %msbcpu% /t:%target% /p:Configuration=%config% /p:Platform=%msbplatform% /clp:NoItemAndPropertyList;Verbosity=minimal /nologo %extra_msbuild_args%
 if errorlevel 1 (
   if not defined project_generated echo Building Node with reused solution failed. To regenerate project files use "vcbuild projgen"
   goto exit

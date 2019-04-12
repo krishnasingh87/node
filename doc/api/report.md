@@ -23,16 +23,17 @@ is provided below for reference.
 {
   "header": {
     "event": "exception",
-    "location": "OnUncaughtException",
-    "filename": "report.20181221.005011.8974.001.json",
+    "trigger": "Exception",
+    "filename": "report.20181221.005011.8974.0.001.json",
     "dumpEventTime": "2018-12-21T00:50:11Z",
     "dumpEventTimeStamp": "1545371411331",
     "processId": 8974,
+    "cwd": "/home/nodeuser/project/node",
     "commandLine": [
       "/home/nodeuser/project/node/out/Release/node",
       "--experimental-report",
       "--diagnostic-report-uncaught-exception",
-      "/home/nodeuser/project/node/test/node-report/test-exception.js",
+      "/home/nodeuser/project/node/test/report/test-exception.js",
       "child"
     ],
     "nodejsVersion": "v12.0.0-pre",
@@ -66,8 +67,8 @@ is provided below for reference.
   "javascriptStack": {
     "message": "Error: *** test-exception.js: throwing uncaught Error",
     "stack": [
-      "at myException (/home/nodeuser/project/node/test/node-report/test-exception.js:9:11)",
-      "at Object.<anonymous> (/home/nodeuser/project/node/test/node-report/test-exception.js:12:3)",
+      "at myException (/home/nodeuser/project/node/test/report/test-exception.js:9:11)",
+      "at Object.<anonymous> (/home/nodeuser/project/node/test/report/test-exception.js:12:3)",
       "at Module._compile (internal/modules/cjs/loader.js:718:30)",
       "at Object.Module._extensions..js (internal/modules/cjs/loader.js:729:10)",
       "at Module.load (internal/modules/cjs/loader.js:617:32)",
@@ -404,14 +405,14 @@ written.
 A report can also be triggered via an API call from a JavaScript application:
 
 ```js
-process.report.triggerReport();
+process.report.writeReport();
 ```
 
 This function takes an optional additional argument `filename`, which is
 the name of a file into which the report is written.
 
 ```js
-process.report.triggerReport('./foo.json');
+process.report.writeReport('./foo.json');
 ```
 
 This function takes an optional additional argument `err` - an `Error` object
@@ -424,19 +425,19 @@ as where it was handled.
 try {
   process.chdir('/non-existent-path');
 } catch (err) {
-  process.report.triggerReport(err);
+  process.report.writeReport(err);
 }
 // Any other code
 ```
 
-If both filename and error object are passed to `triggerReport()` the
+If both filename and error object are passed to `writeReport()` the
 error object must be the second parameter.
 
 ```js
 try {
   process.chdir('/non-existent-path');
 } catch (err) {
-  process.report.triggerReport(filename, err);
+  process.report.writeReport(filename, err);
 }
 // Any other code
 ```
@@ -470,8 +471,8 @@ triggered using the Node.js REPL:
 
 ```raw
 $ node
-> process.report.triggerReport();
-Writing Node.js report to file: report.20181126.091102.8480.001.json
+> process.report.writeReport();
+Writing Node.js report to file: report.20181126.091102.8480.0.001.json
 Node.js report completed
 >
 ```
@@ -484,21 +485,17 @@ times for the same Node.js process.
 
 ## Configuration
 
-Additional runtime configuration that influences the report generation
-constraints are available using `setOptions()` API.
+Additional runtime configuration of report generation is available via
+the following properties of `process.report`:
 
-```js
-process.report.setOptions({
-  events: ['exception', 'fatalerror', 'signal'],
-  signal: 'SIGUSR2',
-  filename: 'myreport.json',
-  path: '/home/nodeuser'
-});
-```
+`reportOnFatalError` triggers diagnostic reporting on fatal errors when `true`.
+Defaults to `false`.
 
-The `events` array contains one or more of the report triggering options.
-The only valid entries are `'exception'`, `'fatalerror'` and `'signal'`.
-By default, a report is not produced on any of these events.
+`reportOnSignal` triggers diagnostic reporting on signal when `true`. This is
+not supported on Windows. Defaults to `false`.
+
+`reportOnUncaughtException` triggers diagnostic reporting on uncaught exception
+when `true`. Defaults to `false`.
 
 `signal` specifies the POSIX signal identifier that will be used
 to intercept external triggers for report generation. Defaults to
@@ -507,24 +504,30 @@ to intercept external triggers for report generation. Defaults to
 `filename` specifies the name of the output file in the file system.
 Special meaning is attached to `stdout` and `stderr`. Usage of these
 will result in report being written to the associated standard streams.
-In such cases when standard streams are used, value in `'path'` is ignored.
+In cases where standard streams are used, the value in `directory` is ignored.
 URLs are not supported. Defaults to a composite filename that contains
 timestamp, PID and sequence number.
 
-`path` specifies the filesystem directory where the report will be written to.
+`directory` specifies the filesystem directory where the report will be written.
 URLs are not supported. Defaults to the current working directory of the
 Node.js process.
 
 ```js
 // Trigger report only on uncaught exceptions.
-process.report.setOptions({ events: ['exception'] });
+process.report.reportOnFatalError = false;
+process.report.reportOnSignal = false;
+process.report.reportOnUncaughtException = true;
 
 // Trigger report for both internal errors as well as external signal.
-process.report.setOptions({ events: ['fatalerror', 'signal'] });
+process.report.reportOnFatalError = true;
+process.report.reportOnSignal = true;
+process.report.reportOnUncaughtException = false;
 
-// Change the default signal to `SIGQUIT` and enable it.
-process.report.setOptions(
-  { events: ['signal'], signal: 'SIGQUIT' });
+// Change the default signal to 'SIGQUIT' and enable it.
+process.report.reportOnFatalError = false;
+process.report.reportOnUncaughtException = false;
+process.report.reportOnSignal = true;
+process.report.signal = 'SIGQUIT';
 ```
 
 Configuration on module initialization is also available via

@@ -1,7 +1,7 @@
 #include "env-inl.h"
 #include "node.h"
 #include "node_i18n.h"
-#include "node_options-inl.h"
+#include "node_options.h"
 #include "util-inl.h"
 
 namespace node {
@@ -64,9 +64,20 @@ static void Initialize(Local<Object> target,
   READONLY_FALSE_PROPERTY(target, "hasInspector");
 #endif
 
+// configure --no-browser-globals
+#ifdef NODE_NO_BROWSER_GLOBALS
+  READONLY_TRUE_PROPERTY(target, "noBrowserGlobals");
+#else
+  READONLY_FALSE_PROPERTY(target, "noBrowserGlobals");
+#endif  // NODE_NO_BROWSER_GLOBALS
+
   READONLY_PROPERTY(target,
                     "bits",
                     Number::New(env->isolate(), 8 * sizeof(intptr_t)));
+
+#if defined HAVE_DTRACE || defined HAVE_ETW
+  READONLY_TRUE_PROPERTY(target, "hasDtrace");
+#endif
 }  // InitConfig
 
 }  // namespace node

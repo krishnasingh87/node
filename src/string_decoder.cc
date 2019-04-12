@@ -1,9 +1,12 @@
+#include "string_decoder.h"  // NOLINT(build/include_inline)
+#include "string_decoder-inl.h"
+
 #include "env-inl.h"
 #include "node_buffer.h"
 #include "string_bytes.h"
-#include "string_decoder-inl.h"
 
 using v8::Array;
+using v8::ArrayBufferView;
 using v8::Context;
 using v8::FunctionCallbackInfo;
 using v8::Integer;
@@ -252,9 +255,13 @@ void DecodeData(const FunctionCallbackInfo<Value>& args) {
   StringDecoder* decoder =
       reinterpret_cast<StringDecoder*>(Buffer::Data(args[0]));
   CHECK_NOT_NULL(decoder);
-  size_t nread = Buffer::Length(args[1]);
+
+  CHECK(args[1]->IsArrayBufferView());
+  ArrayBufferViewContents<char> content(args[1].As<ArrayBufferView>());
+  size_t length = content.length();
+
   MaybeLocal<String> ret =
-      decoder->DecodeData(args.GetIsolate(), Buffer::Data(args[1]), &nread);
+      decoder->DecodeData(args.GetIsolate(), content.data(), &length);
   if (!ret.IsEmpty())
     args.GetReturnValue().Set(ret.ToLocalChecked());
 }

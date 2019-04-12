@@ -1,5 +1,5 @@
 #include "env-inl.h"
-#include "node.h"
+#include "node_internals.h"
 #include "node_process.h"
 #include "async_wrap.h"
 
@@ -65,12 +65,6 @@ int EmitExit(Environment* env) {
       .ToChecked();
 }
 
-void AddPromiseHook(Isolate* isolate, promise_hook_func fn, void* arg) {
-  Environment* env = Environment::GetCurrent(isolate);
-  CHECK_NOT_NULL(env);
-  env->AddPromiseHook(fn, arg);
-}
-
 void AddEnvironmentCleanupHook(Isolate* isolate,
                                void (*fun)(void* arg),
                                void* arg) {
@@ -88,16 +82,12 @@ void RemoveEnvironmentCleanupHook(Isolate* isolate,
 }
 
 async_id AsyncHooksGetExecutionAsyncId(Isolate* isolate) {
-  // Environment::GetCurrent() allocates a Local<> handle.
-  HandleScope handle_scope(isolate);
   Environment* env = Environment::GetCurrent(isolate);
   if (env == nullptr) return -1;
   return env->execution_async_id();
 }
 
 async_id AsyncHooksGetTriggerAsyncId(Isolate* isolate) {
-  // Environment::GetCurrent() allocates a Local<> handle.
-  HandleScope handle_scope(isolate);
   Environment* env = Environment::GetCurrent(isolate);
   if (env == nullptr) return -1;
   return env->trigger_async_id();
@@ -119,7 +109,7 @@ async_context EmitAsyncInit(Isolate* isolate,
                             Local<Object> resource,
                             Local<String> name,
                             async_id trigger_async_id) {
-  HandleScope handle_scope(isolate);
+  DebugSealHandleScope handle_scope(isolate);
   Environment* env = Environment::GetCurrent(isolate);
   CHECK_NOT_NULL(env);
 
@@ -140,8 +130,6 @@ async_context EmitAsyncInit(Isolate* isolate,
 }
 
 void EmitAsyncDestroy(Isolate* isolate, async_context asyncContext) {
-  // Environment::GetCurrent() allocates a Local<> handle.
-  HandleScope handle_scope(isolate);
   AsyncWrap::EmitDestroy(
       Environment::GetCurrent(isolate), asyncContext.async_id);
 }

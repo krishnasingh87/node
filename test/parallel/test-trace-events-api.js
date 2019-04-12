@@ -3,8 +3,12 @@
 
 const common = require('../common');
 
-if (!process.binding('config').hasTracing)
+try {
+  require('trace_events');
+} catch {
   common.skip('missing trace events');
+}
+
 common.skipIfWorker(); // https://github.com/nodejs/node/issues/22767
 
 const assert = require('assert');
@@ -56,7 +60,7 @@ assert.strictEqual(tracing.enabled, false);
 
 assert.strictEqual(getEnabledCategories(), enabledCategories);
 tracing.enable();
-tracing.enable();  // purposefully enable twice to test calling twice
+tracing.enable();  // Purposefully enable twice to test calling twice
 assert.strictEqual(tracing.enabled, true);
 
 assert.strictEqual(getEnabledCategories(),
@@ -72,7 +76,7 @@ tracing2.enable();
 assert.strictEqual(getEnabledCategories(), 'foo');
 
 tracing2.disable();
-tracing2.disable();  // purposefully disable twice to test calling twice
+tracing2.disable();  // Purposefully disable twice to test calling twice
 assert.strictEqual(getEnabledCategories(), enabledCategories);
 
 if (isChild) {

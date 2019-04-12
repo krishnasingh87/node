@@ -29,6 +29,9 @@ const path = require('path');
 
 const backslash = /\\/g;
 
+if (!process.env.NODE_PENDING_DEPRECATION)
+  process.on('warning', common.mustNotCall());
+
 console.error('load test-module-loading.js');
 
 assert.strictEqual(require.main.id, '.');
@@ -45,7 +48,7 @@ require('../fixtures/not-main-module.js');
 }
 
 {
-  // require a file without any extensions
+  // Require a file without any extensions
   const foo_no_ext = require('../fixtures/foo');
   assert.strictEqual(foo_no_ext.foo, 'ok');
 }
@@ -105,6 +108,15 @@ assert.strictEqual(require('../fixtures/packages/index').ok, 'ok');
 assert.strictEqual(require('../fixtures/packages/main').ok, 'ok');
 assert.strictEqual(require('../fixtures/packages/main-index').ok, 'ok');
 assert.strictEqual(require('../fixtures/packages/missing-main').ok, 'ok');
+assert.throws(
+  () => require('../fixtures/packages/missing-main-no-index'),
+  {
+    code: 'MODULE_NOT_FOUND',
+    message: /packages[/\\]missing-main-no-index[/\\]doesnotexist\.js'\. Please.+package\.json.+valid "main"/,
+    path: /fixtures[/\\]packages[/\\]missing-main-no-index[/\\]package\.json/,
+    requestPath: /^\.\.[/\\]fixtures[/\\]packages[/\\]missing-main-no-index$/
+  }
+);
 
 assert.throws(
   function() { require('../fixtures/packages/unparseable'); },
@@ -120,7 +132,7 @@ assert.throws(
 }
 
 console.error('test node_modules folders');
-// asserts are in the fixtures files themselves,
+// Asserts are in the fixtures files themselves,
 // since they depend on the folder structure.
 require('../fixtures/node_modules/foo');
 
@@ -129,7 +141,7 @@ require('../fixtures/node_modules/foo');
   // This one exists and should import the local module
   const my_path = require('../fixtures/path');
   assert.ok(my_path.path_func instanceof Function);
-  // this one does not exist and should throw
+  // This one does not exist and should throw
   assert.throws(function() { require('./utils'); },
                 /^Error: Cannot find module '\.\/utils'/);
 }
@@ -154,7 +166,7 @@ require.extensions['.test'] = function(module, filename) {
 };
 
 assert.strictEqual(require('../fixtures/registerExt').test, 'passed');
-// unknown extension, load as .js
+// Unknown extension, load as .js
 assert.strictEqual(require('../fixtures/registerExt.hello.world').test,
                    'passed');
 
@@ -216,7 +228,7 @@ assert.throws(
 }
 
 {
-  // make sure that module.require() is the same as
+  // Make sure that module.require() is the same as
   // doing require() inside of that module.
   const parent = require('../fixtures/module-require/parent/');
   const child = require('../fixtures/module-require/child/');

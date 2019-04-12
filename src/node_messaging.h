@@ -49,7 +49,7 @@ class Message : public MemoryRetainer {
   void AddMessagePort(std::unique_ptr<MessagePortData>&& data);
   // Internal method of Message that is called when a new WebAssembly.Module
   // object is encountered in the incoming value's structure.
-  uint32_t AddWASMModule(v8::WasmCompiledModule::TransferrableModule&& mod);
+  uint32_t AddWASMModule(v8::WasmModuleObject::TransferrableModule&& mod);
 
   // The MessagePorts that will be transferred, as recorded by Serialize().
   // Used for warning user about posting the target MessagePort to itself,
@@ -68,7 +68,7 @@ class Message : public MemoryRetainer {
   std::vector<MallocedBuffer<char>> array_buffer_contents_;
   std::vector<SharedArrayBufferMetadataReference> shared_array_buffers_;
   std::vector<std::unique_ptr<MessagePortData>> message_ports_;
-  std::vector<v8::WasmCompiledModule::TransferrableModule> wasm_modules_;
+  std::vector<v8::WasmModuleObject::TransferrableModule> wasm_modules_;
 
   friend class MessagePort;
 };
@@ -152,22 +152,22 @@ class MessagePort : public HandleWrap {
   v8::Maybe<bool> PostMessage(Environment* env,
                               v8::Local<v8::Value> message,
                               v8::Local<v8::Value> transfer);
-  // Deliver a single message into this port's incoming queue.
-  void AddToIncomingQueue(Message&& message);
 
   // Start processing messages on this port as a receiving end.
   void Start();
   // Stop processing messages on this port as a receiving end.
   void Stop();
-  // Stop processing messages on this port as a receiving end,
-  // and stop the event loop that this port is associated with.
-  void StopEventLoop();
 
+  /* constructor */
   static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
+  /* prototype methods */
   static void PostMessage(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Start(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Stop(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Drain(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  /* static */
+  static void MoveToContext(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // Turns `a` and `b` into siblings, i.e. connects the sending side of one
   // to the receiving side of the other. This is not thread-safe.
@@ -203,10 +203,9 @@ class MessagePort : public HandleWrap {
   void OnClose() override;
   void OnMessage();
   void TriggerAsync();
-  inline uv_async_t* async();
 
   std::unique_ptr<MessagePortData> data_ = nullptr;
-  bool stop_event_loop_ = false;
+  uv_async_t async_;
 
   friend class MessagePortData;
 };

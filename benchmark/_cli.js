@@ -16,7 +16,7 @@ function CLI(usage, settings) {
   if (!(this instanceof CLI)) return new CLI(usage, settings);
 
   if (process.argv.length < 3) {
-    this.abort(usage); // abort will exit the process
+    this.abort(usage); // Abort will exit the process
   }
 
   this.usage = usage;
@@ -28,7 +28,7 @@ function CLI(usage, settings) {
   }
 
   let currentOptional = null;
-  let mode = 'both'; // possible states are: [both, option, item]
+  let mode = 'both'; // Possible states are: [both, option, item]
 
   for (const arg of process.argv.slice(2)) {
     if (arg === '--') {
@@ -59,13 +59,13 @@ function CLI(usage, settings) {
         this.optional[currentOptional] = arg;
       }
 
-      // the next value can be either an option or an item
+      // The next value can be either an option or an item
       mode = 'both';
     } else if (['both', 'item'].includes(mode)) {
       // item arguments
       this.items.push(arg);
 
-      // the next value must be an item
+      // The next value must be an item
       mode = 'item';
     } else {
       // Bad case, abort

@@ -7,7 +7,7 @@
 #include "uv.h"
 #include "v8.h"
 
-#include <string.h>
+#include <cstring>
 
 namespace node {
 
@@ -28,6 +28,7 @@ Local<Value> ErrnoException(Isolate* isolate,
                             const char* msg,
                             const char* path) {
   Environment* env = Environment::GetCurrent(isolate);
+  CHECK_NOT_NULL(env);
 
   Local<Value> e;
   Local<String> estring = OneByteString(isolate, errors::errno_string(errorno));
@@ -99,6 +100,7 @@ Local<Value> UVException(Isolate* isolate,
                          const char* path,
                          const char* dest) {
   Environment* env = Environment::GetCurrent(isolate);
+  CHECK_NOT_NULL(env);
 
   if (!msg || !msg[0])
     msg = uv_strerror(errorno);
@@ -160,15 +162,21 @@ static const char* winapi_strerror(const int errorno, bool* must_free) {
   char* errmsg = nullptr;
 
   FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
-      FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, errorno,
-      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)&errmsg, 0, nullptr);
+                    FORMAT_MESSAGE_IGNORE_INSERTS,
+                nullptr,
+                errorno,
+                MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                reinterpret_cast<LPTSTR>(&errmsg),
+                0,
+                nullptr);
 
   if (errmsg) {
     *must_free = true;
 
     // Remove trailing newlines
     for (int i = strlen(errmsg) - 1;
-        i >= 0 && (errmsg[i] == '\n' || errmsg[i] == '\r'); i--) {
+         i >= 0 && (errmsg[i] == '\n' || errmsg[i] == '\r');
+         i--) {
       errmsg[i] = '\0';
     }
 
@@ -180,13 +188,13 @@ static const char* winapi_strerror(const int errorno, bool* must_free) {
   }
 }
 
-
 Local<Value> WinapiErrnoException(Isolate* isolate,
                                   int errorno,
                                   const char* syscall,
                                   const char* msg,
                                   const char* path) {
   Environment* env = Environment::GetCurrent(isolate);
+  CHECK_NOT_NULL(env);
   Local<Value> e;
   bool must_free = false;
   if (!msg || !msg[0]) {
@@ -210,20 +218,27 @@ Local<Value> WinapiErrnoException(Isolate* isolate,
   }
 
   Local<Object> obj = e.As<Object>();
-  obj->Set(env->errno_string(), Integer::New(isolate, errorno));
+  obj->Set(env->context(), env->errno_string(), Integer::New(isolate, errorno))
+      .FromJust();
 
   if (path != nullptr) {
-    obj->Set(env->path_string(),
+    obj->Set(env->context(),
+             env->path_string(),
              String::NewFromUtf8(isolate, path, NewStringType::kNormal)
-                 .ToLocalChecked());
+                 .ToLocalChecked())
+        .FromJust();
   }
 
   if (syscall != nullptr) {
-    obj->Set(env->syscall_string(), OneByteString(isolate, syscall));
+    obj->Set(env->context(),
+             env->syscall_string(),
+             OneByteString(isolate, syscall))
+        .FromJust();
   }
 
-  if (must_free)
-    LocalFree((HLOCAL)msg);
+  if (must_free) {
+    LocalFree(const_cast<char*>(msg));
+  }
 
   return e;
 }

@@ -69,7 +69,7 @@ See [Memory Usage Tuning][] for more information on the speed/memory/compression
 tradeoffs involved in `zlib` usage.
 
 ```js
-// client request example
+// Client request example
 const zlib = require('zlib');
 const http = require('http');
 const fs = require('fs');
@@ -107,6 +107,8 @@ const http = require('http');
 const fs = require('fs');
 http.createServer((request, response) => {
   const raw = fs.createReadStream('index.html');
+  // Store both a compressed and an uncompressed version of the resource.
+  response.setHeader('Vary: Accept-Encoding');
   let acceptEncoding = request.headers['accept-encoding'];
   if (!acceptEncoding) {
     acceptEncoding = '';

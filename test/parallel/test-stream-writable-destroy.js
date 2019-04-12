@@ -69,7 +69,7 @@ const assert = require('assert');
   write.on('finish', common.mustNotCall('no finish event'));
   write.on('close', common.mustCall());
 
-  // error is swallowed by the custom _destroy
+  // Error is swallowed by the custom _destroy
   write.on('error', common.mustNotCall('no error event'));
 
   write.destroy(expected);
@@ -153,6 +153,32 @@ const assert = require('assert');
 }
 
 {
+  const writable = new Writable({
+    destroy: common.mustCall(function(err, cb) {
+      process.nextTick(cb, new Error('kaboom 1'));
+    }),
+    write(chunk, enc, cb) {
+      cb();
+    }
+  });
+
+  writable.on('close', common.mustCall());
+  writable.on('error', common.expectsError({
+    type: Error,
+    message: 'kaboom 2'
+  }));
+
+  writable.destroy();
+  assert.strictEqual(writable.destroyed, true);
+  assert.strictEqual(writable._writableState.errorEmitted, false);
+
+  // Test case where `writable.destroy()` is called again with an error before
+  // the `_destroy()` callback is called.
+  writable.destroy(new Error('kaboom 2'));
+  assert.strictEqual(writable._writableState.errorEmitted, true);
+}
+
+{
   const write = new Writable({
     write(chunk, enc, cb) { cb(); }
   });
@@ -179,7 +205,7 @@ const assert = require('assert');
 }
 
 {
-  // destroy and destroy callback
+  // Destroy and destroy callback
   const write = new Writable({
     write(chunk, enc, cb) { cb(); }
   });

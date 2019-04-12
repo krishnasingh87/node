@@ -49,7 +49,7 @@ putIn.run(testFile);
 // save it to a file
 putIn.run([`.save ${saveFileName}`]);
 
-// the file should have what I wrote
+// The file should have what I wrote
 assert.strictEqual(fs.readFileSync(saveFileName, 'utf8'),
                    `${testFile.join('\n')}\n`);
 
@@ -61,7 +61,7 @@ assert.strictEqual(fs.readFileSync(saveFileName, 'utf8'),
     '}'
   ];
   const putIn = new ArrayStream();
-  const replServer = repl.start('', putIn);
+  const replServer = repl.start({ terminal: true, stream: putIn });
 
   putIn.run(['.editor']);
   putIn.run(cmds);
@@ -70,10 +70,10 @@ assert.strictEqual(fs.readFileSync(saveFileName, 'utf8'),
   putIn.run([`.save ${saveFileName}`]);
   replServer.close();
   assert.strictEqual(fs.readFileSync(saveFileName, 'utf8'),
-                     `${cmds.join('\n')}\n`);
+                     `${cmds.join('\n')}\n\n`);
 }
 
-// make sure that the REPL data is "correct"
+// Make sure that the REPL data is "correct"
 // so when I load it back I know I'm good
 testMe.complete('inner.o', function(error, data) {
   assert.deepStrictEqual(data, works);
@@ -85,7 +85,7 @@ putIn.run(['.clear']);
 // Load the file back in
 putIn.run([`.load ${saveFileName}`]);
 
-// make sure that the REPL data is "correct"
+// Make sure that the REPL data is "correct"
 testMe.complete('inner.o', function(error, data) {
   assert.deepStrictEqual(data, works);
 });
@@ -99,12 +99,12 @@ let loadFile = join(tmpdir.path, 'file.does.not.exist');
 putIn.write = function(data) {
   // Make sure I get a failed to load message and not some crazy error
   assert.strictEqual(data, `Failed to load:${loadFile}\n`);
-  // eat me to avoid work
+  // Eat me to avoid work
   putIn.write = () => {};
 };
 putIn.run([`.load ${loadFile}`]);
 
-// throw error on loading directory
+// Throw error on loading directory
 loadFile = tmpdir.path;
 putIn.write = function(data) {
   assert.strictEqual(data, `Failed to load:${loadFile} is not a valid file\n`);

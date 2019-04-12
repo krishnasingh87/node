@@ -65,7 +65,7 @@ test(function(parent, port) {
       s += c.toString();
     });
     res.on('end', function() {
-      // kill the worker before we start doing asserts.
+      // Kill the worker before we start doing asserts.
       // it's really annoying when tests leave orphans!
       parent.kill();
       parent.on('exit', function() {
@@ -136,7 +136,7 @@ function master() {
 
 function worker() {
   console.error('worker, about to create server and listen on fd=3');
-  // start a server on fd=3
+  // Start a server on fd=3
   http.createServer(function(req, res) {
     console.error('request on worker');
     console.error('%s %s', req.method, req.url, req.headers);

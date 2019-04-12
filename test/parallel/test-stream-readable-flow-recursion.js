@@ -30,7 +30,7 @@ const assert = require('assert');
 
 const Readable = require('stream').Readable;
 
-// throw an error if we trigger a nextTick warning.
+// Throw an error if we trigger a nextTick warning.
 process.throwDeprecation = true;
 
 const stream = new Readable({ highWaterMark: 2 });
@@ -67,7 +67,7 @@ flow(stream, 5000, function() {
 
 process.on('exit', function(code) {
   assert.strictEqual(reads, 2);
-  // we pushed up the high water mark
+  // We pushed up the high water mark
   assert.strictEqual(stream.readableHighWaterMark, 8192);
   // Length is 0 right now, because we pulled it all out.
   assert.strictEqual(stream.readableLength, 0);

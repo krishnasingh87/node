@@ -111,14 +111,14 @@ void FSEventWrap::Initialize(Local<Object> target,
   Local<FunctionTemplate> get_initialized_templ =
       FunctionTemplate::New(env->isolate(),
                             GetInitialized,
-                            env->as_external(),
+                            env->as_callback_data(),
                             Signature::New(env->isolate(), t));
 
   t->PrototypeTemplate()->SetAccessorProperty(
       FIXED_ONE_BYTE_STRING(env->isolate(), "initialized"),
       get_initialized_templ,
       Local<FunctionTemplate>(),
-      static_cast<PropertyAttribute>(ReadOnly | DontDelete | v8::DontEnum));
+      static_cast<PropertyAttribute>(ReadOnly | DontDelete | DontEnum));
 
   target->Set(env->context(),
               fsevent_string,

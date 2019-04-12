@@ -1,6 +1,7 @@
 {
   'variables': {
-    'v8_use_snapshot%': 'false',
+    'v8_use_siphash%': 0,
+    'v8_use_snapshot%': 0,
     'v8_trace_maps%': 0,
     'node_use_dtrace%': 'false',
     'node_use_etw%': 'false',
@@ -25,12 +26,13 @@
     'node_lib_target_name%': 'node_lib',
     'node_intermediate_lib_type%': 'static_library',
     'library_files': [
-      'lib/internal/bootstrap/context.js',
       'lib/internal/bootstrap/primordials.js',
-      'lib/internal/bootstrap/cache.js',
+      'lib/internal/bootstrap/environment.js',
       'lib/internal/bootstrap/loaders.js',
       'lib/internal/bootstrap/node.js',
       'lib/internal/bootstrap/pre_execution.js',
+      'lib/internal/per_context/setup.js',
+      'lib/internal/per_context/domexception.js',
       'lib/async_hooks.js',
       'lib/assert.js',
       'lib/buffer.js',
@@ -99,7 +101,6 @@
       'lib/internal/cluster/worker.js',
       'lib/internal/console/constructor.js',
       'lib/internal/console/global.js',
-      'lib/internal/coverage-gen/with_profiler.js',
       'lib/internal/crypto/certificate.js',
       'lib/internal/crypto/cipher.js',
       'lib/internal/crypto/diffiehellman.js',
@@ -115,12 +116,13 @@
       'lib/internal/dgram.js',
       'lib/internal/dns/promises.js',
       'lib/internal/dns/utils.js',
-      'lib/internal/domexception.js',
+      'lib/internal/dtrace.js',
       'lib/internal/encoding.js',
       'lib/internal/errors.js',
       'lib/internal/error-serdes.js',
       'lib/internal/fixed_queue.js',
       'lib/internal/freelist.js',
+      'lib/internal/freeze_intrinsics.js',
       'lib/internal/fs/promises.js',
       'lib/internal/fs/read_file_context.js',
       'lib/internal/fs/streams.js',
@@ -159,7 +161,6 @@
       'lib/internal/process/esm_loader.js',
       'lib/internal/process/execution.js',
       'lib/internal/process/main_thread_only.js',
-      'lib/internal/process/next_tick.js',
       'lib/internal/process/per_thread.js',
       'lib/internal/process/policy.js',
       'lib/internal/process/promises.js',
@@ -167,16 +168,15 @@
       'lib/internal/process/warning.js',
       'lib/internal/process/worker_thread_only.js',
       'lib/internal/process/report.js',
+      'lib/internal/process/task_queues.js',
       'lib/internal/querystring.js',
-      'lib/internal/queue_microtask.js',
       'lib/internal/readline.js',
       'lib/internal/repl.js',
       'lib/internal/repl/await.js',
       'lib/internal/repl/history.js',
-      'lib/internal/repl/recoverable.js',
+      'lib/internal/repl/utils.js',
       'lib/internal/socket_list.js',
       'lib/internal/test/binding.js',
-      'lib/internal/test/heap.js',
       'lib/internal/timers.js',
       'lib/internal/tls.js',
       'lib/internal/trace_events_async_hooks.js',
@@ -184,6 +184,7 @@
       'lib/internal/url.js',
       'lib/internal/util.js',
       'lib/internal/util/comparisons.js',
+      'lib/internal/util/debuglog.js',
       'lib/internal/util/inspect.js',
       'lib/internal/util/inspector.js',
       'lib/internal/util/types.js',
@@ -344,16 +345,7 @@
           ],
           'conditions': [
             ['OS=="win"', {
-              'libraries': [
-                'dbghelp.lib',
-                'PsApi.lib',
-                'Ws2_32.lib',
-              ],
-              'dll_files': [
-                'dbghelp.dll',
-                'PsApi.dll',
-                'Ws2_32.dll',
-              ],
+              'libraries': [ 'Ws2_32' ],
             }],
           ],
         }],
@@ -403,6 +395,7 @@
       'dependencies': [ 'deps/histogram/histogram.gyp:histogram' ],
 
       'sources': [
+        'src/api/async_resource.cc',
         'src/api/callback.cc',
         'src/api/encoding.cc',
         'src/api/environment.cc',
@@ -621,7 +614,10 @@
               ],
             }],
           ],
-          'libraries': [ '-lpsapi.lib' ]
+          'libraries': [
+            'Dbghelp',
+            'Psapi',
+          ],
         }],
         [ 'node_use_etw=="true"', {
           'defines': [ 'HAVE_ETW=1' ],
@@ -716,16 +712,7 @@
           ],
           'conditions': [
             ['OS=="win"', {
-              'libraries': [
-                'dbghelp.lib',
-                'PsApi.lib',
-                'Ws2_32.lib',
-              ],
-              'dll_files': [
-                'dbghelp.dll',
-                'PsApi.dll',
-                'Ws2_32.dll',
-              ],
+              'libraries': [ 'Ws2_32' ],
             }],
           ],
         }],
@@ -1036,6 +1023,7 @@
         'test/cctest/test_base64.cc',
         'test/cctest/test_node_postmortem_metadata.cc',
         'test/cctest/test_environment.cc',
+        'test/cctest/test_linked_binding.cc',
         'test/cctest/test_platform.cc',
         'test/cctest/test_report_util.cc',
         'test/cctest/test_traced_value.cc',
@@ -1080,16 +1068,7 @@
           ],
           'conditions': [
             ['OS=="win"', {
-              'libraries': [
-                'dbghelp.lib',
-                'PsApi.lib',
-                'Ws2_32.lib',
-              ],
-              'dll_files': [
-                'dbghelp.dll',
-                'PsApi.dll',
-                'Ws2_32.dll',
-              ],
+              'libraries': [ 'Ws2_32' ],
             }],
           ],
         }],

@@ -145,13 +145,13 @@ available to the module code.
 
 ## N-API Version Matrix
 
-|       | 1       | 2        | 3        |
-|:-----:|:-------:|:--------:|:--------:|
-| v4.x  |         |          |          |
-| v6.x  |         |          | v6.14.2* |
-| v8.x  | v8.0.0* | v8.10.0* |          |
-| v9.x  | v9.0.0* | v9.3.0*  | v9.11.0* |
-| v10.x |         |          | v10.0.0  |
+|       | 1       | 2        | 3        | 4        |
+|:-----:|:-------:|:--------:|:--------:|:--------:|
+| v6.x  |         |          | v6.14.2* |          |
+| v8.x  | v8.0.0* | v8.10.0* | v8.11.2  |          |
+| v9.x  | v9.0.0* | v9.3.0*  | v9.11.0* |          |
+| v10.x |         |          | v10.0.0  |          |
+| v11.x |         |          | v11.0.0  | v11.8.0  |
 
 \* Indicates that the N-API version was released as experimental
 
@@ -243,6 +243,7 @@ typedef enum {
   napi_queue_full,
   napi_closing,
   napi_bigint_expected,
+  napi_date_expected,
 } napi_status;
 ```
 If additional information is required upon an API returning a failed status,
@@ -377,7 +378,7 @@ typedef void (*napi_finalize)(napi_env env,
 
 #### napi_async_execute_callback
 Function pointer used with functions that support asynchronous
-operations. Callback functions must statisfy the following signature:
+operations. Callback functions must satisfy the following signature:
 
 ```C
 typedef void (*napi_async_execute_callback)(napi_env env, void* data);
@@ -390,7 +391,7 @@ calls should be made in `napi_async_complete_callback` instead.
 
 #### napi_async_complete_callback
 Function pointer used with functions that support asynchronous
-operations. Callback functions must statisfy the following signature:
+operations. Callback functions must satisfy the following signature:
 
 ```C
 typedef void (*napi_async_complete_callback)(napi_env env,
@@ -1527,6 +1528,31 @@ This API allocates a `node::Buffer` object and initializes it with data copied
 from the passed-in buffer. While this is still a fully-supported data
 structure, in most cases using a `TypedArray` will suffice.
 
+#### napi_create_date
+<!-- YAML
+added: v11.11.0
+napiVersion: 4
+-->
+
+> Stability: 1 - Experimental
+
+```C
+napi_status napi_create_date(napi_env env,
+                             double time,
+                             napi_value* result);
+```
+
+- `[in] env`: The environment that the API is invoked under.
+- `[in] time`: ECMAScript time value in milliseconds since 01 January, 1970 UTC.
+- `[out] result`: A `napi_value` representing a JavaScript `Date`.
+
+Returns `napi_ok` if the API succeeded.
+
+This API allocates a JavaScript `Date` object.
+
+JavaScript `Date` objects are described in
+[Section 20.3][] of the ECMAScript Language Specification.
+
 #### napi_create_external
 <!-- YAML
 added: v8.0.0
@@ -2147,6 +2173,31 @@ Returns `napi_ok` if the API succeeded.
 
 This API returns various properties of a `DataView`.
 
+#### napi_get_date_value
+<!-- YAML
+added: v11.11.0
+napiVersion: 4
+-->
+
+> Stability: 1 - Experimental
+
+```C
+napi_status napi_get_date_value(napi_env env,
+                                napi_value value,
+                                double* result)
+```
+
+- `[in] env`: The environment that the API is invoked under.
+- `[in] value`: `napi_value` representing a JavaScript `Date`.
+- `[out] result`: Time value as a `double` represented as milliseconds
+since midnight at the beginning of 01 January, 1970 UTC.
+
+Returns `napi_ok` if the API succeeded. If a non-date `napi_value` is passed
+in it returns `napi_date_expected`.
+
+This API returns the C double primitive of time value for the given JavaScript
+`Date`.
+
 #### napi_get_value_bool
 <!-- YAML
 added: v8.0.0
@@ -2255,8 +2306,8 @@ added: v10.7.0
 ```C
 napi_status napi_get_value_bigint_words(napi_env env,
                                         napi_value value,
-                                        size_t* word_count,
                                         int* sign_bit,
+                                        size_t* word_count,
                                         uint64_t* words);
 ```
 
@@ -2730,6 +2781,27 @@ object.
 Returns `napi_ok` if the API succeeded.
 
 This API checks if the `Object` passed in is a buffer.
+
+### napi_is_date
+<!-- YAML
+added: v11.11.0
+napiVersion: 4
+-->
+
+> Stability: 1 - Experimental
+
+```C
+napi_status napi_is_date(napi_env env, napi_value value, bool* result)
+```
+
+- `[in] env`: The environment that the API is invoked under.
+- `[in] value`: The JavaScript value to check.
+- `[out] result`: Whether the given `napi_value` represents a JavaScript `Date`
+object.
+
+Returns `napi_ok` if the API succeeded.
+
+This API checks if the `Object` passed in is a date.
 
 ### napi_is_error
 <!-- YAML
@@ -4530,6 +4602,7 @@ prevent the event loop from exiting. The APIs `napi_ref_threadsafe_function` and
 
 <!-- YAML
 added: v10.6.0
+napiVersion: 4
 -->
 ```C
 NAPI_EXTERN napi_status
@@ -4573,6 +4646,7 @@ parameters and with `undefined` as its `this` value.
 
 <!-- YAML
 added: v10.6.0
+napiVersion: 4
 -->
 ```C
 NAPI_EXTERN napi_status
@@ -4591,6 +4665,7 @@ This API may be called from any thread which makes use of `func`.
 
 <!-- YAML
 added: v10.6.0
+napiVersion: 4
 -->
 ```C
 NAPI_EXTERN napi_status
@@ -4619,6 +4694,7 @@ This API may be called from any thread which makes use of `func`.
 
 <!-- YAML
 added: v10.6.0
+napiVersion: 4
 -->
 ```C
 NAPI_EXTERN napi_status
@@ -4641,6 +4717,7 @@ This API may be called from any thread which will start making use of `func`.
 
 <!-- YAML
 added: v10.6.0
+napiVersion: 4
 -->
 ```C
 NAPI_EXTERN napi_status
@@ -4669,6 +4746,7 @@ This API may be called from any thread which will stop making use of `func`.
 
 <!-- YAML
 added: v10.6.0
+napiVersion: 4
 -->
 ```C
 NAPI_EXTERN napi_status
@@ -4690,6 +4768,7 @@ This API may only be called from the main thread.
 
 <!-- YAML
 added: v10.6.0
+napiVersion: 4
 -->
 ```C
 NAPI_EXTERN napi_status
@@ -4712,6 +4791,7 @@ This API may only be called from the main thread.
 [Object Lifetime Management]: #n_api_object_lifetime_management
 [Object Wrap]: #n_api_object_wrap
 [Section 12.5.5]: https://tc39.github.io/ecma262/#sec-typeof-operator
+[Section 20.3]: https://tc39.github.io/ecma262/#sec-date-objects
 [Section 22.1]: https://tc39.github.io/ecma262/#sec-array-objects
 [Section 22.2]: https://tc39.github.io/ecma262/#sec-typedarray-objects
 [Section 24.1]: https://tc39.github.io/ecma262/#sec-arraybuffer-objects

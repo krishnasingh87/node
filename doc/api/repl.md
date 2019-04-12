@@ -256,13 +256,32 @@ function isRecoverableError(error) {
 
 By default, [`repl.REPLServer`][] instances format output using the
 [`util.inspect()`][] method before writing the output to the provided `Writable`
-stream (`process.stdout` by default). The `useColors` boolean option can be
-specified at construction to instruct the default writer to use ANSI style
-codes to colorize the output from the `util.inspect()` method.
+stream (`process.stdout` by default). The `showProxy` inspection option is set
+to true by default and the `colors` option is set to true depending on the
+REPL's `useColors` option.
 
-It is possible to fully customize the output of a [`repl.REPLServer`][] instance
-by passing a new function in using the `writer` option on construction. The
-following example, for instance, simply converts any input text to upper case:
+The `useColors` boolean option can be specified at construction to instruct the
+default writer to use ANSI style codes to colorize the output from the
+`util.inspect()` method.
+
+If the REPL is run as standalone program, it is also possible to change the
+REPL's [inspection defaults][`util.inspect()`] from inside the REPL by using the
+`inspect.replDefaults` property which mirrors the `defaultOptions` from
+[`util.inspect()`][].
+
+```console
+> util.inspect.replDefaults.compact = false;
+false
+> [1]
+[
+  1
+]
+>
+```
+
+To fully customize the output of a [`repl.REPLServer`][] instance pass in a new
+function for the `writer` option on construction. The following example, for
+instance, simply converts any input text to upper case:
 
 ```js
 const repl = require('repl');
@@ -460,6 +479,10 @@ with REPL instances programmatically.
 <!-- YAML
 added: v0.1.91
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/REPLACEME
+    description: The `terminal` option now follows the default description in
+                 all cases and `useColors` checks `hasColors()` if available.
   - version: v10.0.0
     pr-url: https://github.com/nodejs/node/pull/19187
     description: The `REPL_MAGIC_MODE` `replMode` was removed.
@@ -476,7 +499,7 @@ changes:
   * `output` {stream.Writable} The `Writable` stream to which REPL output will
     be written. **Default:** `process.stdout`.
   * `terminal` {boolean} If `true`, specifies that the `output` should be
-    treated as a TTY terminal, and have ANSI/VT100 escape codes written to it.
+    treated as a TTY terminal.
     **Default:** checking the value of the `isTTY` property on the `output`
     stream upon instantiation.
   * `eval` {Function} The function to be used when evaluating each given line
@@ -485,8 +508,9 @@ changes:
     the input was incomplete and prompt for additional lines.
   * `useColors` {boolean} If `true`, specifies that the default `writer`
     function should include ANSI color styling to REPL output. If a custom
-    `writer` function is provided then this has no effect. **Default:** the
-     REPL instances `terminal` value.
+    `writer` function is provided then this has no effect. **Default:** checking
+    color support on the `output` stream if the REPL instance's `terminal` value
+    is `true`.
   * `useGlobal` {boolean} If `true`, specifies that the default evaluation
      function will use the JavaScript `global` as the context as opposed to
      creating a new separate context for the REPL instance. The node CLI REPL

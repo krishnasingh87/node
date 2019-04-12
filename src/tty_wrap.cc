@@ -32,6 +32,7 @@ namespace node {
 
 using v8::Array;
 using v8::Context;
+using v8::Function;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
 using v8::Integer;
@@ -39,7 +40,6 @@ using v8::Local;
 using v8::Object;
 using v8::String;
 using v8::Value;
-
 
 void TTYWrap::Initialize(Local<Object> target,
                          Local<Value> unused,
@@ -51,7 +51,8 @@ void TTYWrap::Initialize(Local<Object> target,
 
   Local<FunctionTemplate> t = env->NewFunctionTemplate(New);
   t->SetClassName(ttyString);
-  t->InstanceTemplate()->SetInternalFieldCount(1);
+  t->InstanceTemplate()
+    ->SetInternalFieldCount(StreamBase::kStreamBaseFieldCount);
   t->Inherit(LibuvStreamWrap::GetConstructorTemplate(env));
 
   env->SetProtoMethodNoSideEffect(t, "getWindowSize", TTYWrap::GetWindowSize);
@@ -60,10 +61,11 @@ void TTYWrap::Initialize(Local<Object> target,
   env->SetMethodNoSideEffect(target, "isTTY", IsTTY);
   env->SetMethodNoSideEffect(target, "guessHandleType", GuessHandleType);
 
-  target->Set(env->context(),
-              ttyString,
-              t->GetFunction(env->context()).ToLocalChecked()).FromJust();
-  env->set_tty_constructor_template(t);
+  Local<Value> func;
+  if (t->GetFunction(env->context()).ToLocal(&func) &&
+      target->Set(env->context(), ttyString, func).IsJust()) {
+    env->set_tty_constructor_template(t);
+  }
 }
 
 
@@ -114,7 +116,7 @@ void TTYWrap::GetWindowSize(const FunctionCallbackInfo<Value>& args) {
   int err = uv_tty_get_winsize(&wrap->handle_, &width, &height);
 
   if (err == 0) {
-    Local<v8::Array> a = args[0].As<Array>();
+    Local<Array> a = args[0].As<Array>();
     a->Set(env->context(), 0, Integer::New(env->isolate(), width)).FromJust();
     a->Set(env->context(), 1, Integer::New(env->isolate(), height)).FromJust();
   }

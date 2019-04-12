@@ -31,8 +31,8 @@
 #include "v8-profiler.h"
 #include "v8.h"
 
-#include <string.h>
-#include <limits.h>
+#include <cstring>
+#include <climits>
 
 #define THROW_AND_RETURN_UNLESS_BUFFER(env, obj)                            \
   THROW_AND_RETURN_IF_NOT_BUFFER(env, obj, "argument")                      \
@@ -87,6 +87,10 @@ class CallbackInfo {
                                   FreeCallback callback,
                                   char* data,
                                   void* hint = nullptr);
+
+  CallbackInfo(const CallbackInfo&) = delete;
+  CallbackInfo& operator=(const CallbackInfo&) = delete;
+
  private:
   static void WeakCallback(const WeakCallbackInfo<CallbackInfo>&);
   inline void WeakCallback(Isolate* isolate);
@@ -99,7 +103,6 @@ class CallbackInfo {
   FreeCallback const callback_;
   char* const data_;
   void* const hint_;
-  DISALLOW_COPY_AND_ASSIGN(CallbackInfo);
 };
 
 
@@ -1104,7 +1107,8 @@ void Initialize(Local<Object> target,
 
   // It can be a nullptr when running inside an isolate where we
   // do not own the ArrayBuffer allocator.
-  if (ArrayBufferAllocator* allocator = env->isolate_data()->node_allocator()) {
+  if (NodeArrayBufferAllocator* allocator =
+          env->isolate_data()->node_allocator()) {
     uint32_t* zero_fill_field = allocator->zero_fill_field();
     Local<ArrayBuffer> array_buffer = ArrayBuffer::New(
         env->isolate(), zero_fill_field, sizeof(*zero_fill_field));

@@ -4,10 +4,10 @@
 #include "node_i18n.h"
 #include "util.h"
 
+#include <cmath>
+#include <cstdio>
 #include <string>
 #include <vector>
-#include <stdio.h>
-#include <cmath>
 
 namespace node {
 
@@ -2053,7 +2053,7 @@ void URL::Parse(const char* input,
             break;
           default:
             if (url->path.size() == 0)
-              url->path.push_back("");
+              url->path.emplace_back("");
             if (url->path.size() > 0 && ch != kEOL)
               AppendOrEscape(&url->path[0], ch, C0_CONTROL_ENCODE_SET);
         }

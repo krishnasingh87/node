@@ -1,7 +1,6 @@
 {
   'variables': {
     'protocol_tool_path': '../../tools/inspector_protocol',
-    'node_inspector_path': '../../src/inspector',
     'node_inspector_generated_sources': [
       '<(SHARED_INTERMEDIATE_DIR)/src/node/inspector/protocol/Forward.h',
       '<(SHARED_INTERMEDIATE_DIR)/src/node/inspector/protocol/Protocol.cpp',
@@ -34,7 +33,7 @@
       '<(protocol_tool_path)/templates/Imported_h.template',
       '<(protocol_tool_path)/templates/TypeBuilder_cpp.template',
       '<(protocol_tool_path)/templates/TypeBuilder_h.template',
-      '<(protocol_tool_path)/CodeGenerator.py',
+      '<(protocol_tool_path)/code_generator.py',
     ]
   },
   'defines': [
@@ -45,7 +44,8 @@
     '../../src/inspector_io.cc',
     '../../src/inspector_agent.h',
     '../../src/inspector_io.h',
-    '../../src/inspector_coverage.cc',
+    '../../src/inspector_profiler.h',
+    '../../src/inspector_profiler.cc',
     '../../src/inspector_js_api.cc',
     '../../src/inspector_socket.cc',
     '../../src/inspector_socket.h',
@@ -67,27 +67,18 @@
     '<(SHARED_INTERMEDIATE_DIR)',
     '<(SHARED_INTERMEDIATE_DIR)/src', # for inspector
   ],
-  'copies': [
-    {
-      'files': [
-        '<(node_inspector_path)/node_protocol_config.json',
-        '<(node_inspector_path)/node_protocol.pdl'
-      ],
-      'destination': '<(SHARED_INTERMEDIATE_DIR)',
-    }
-  ],
   'actions': [
     {
       'action_name': 'convert_node_protocol_to_json',
       'inputs': [
-        '<(SHARED_INTERMEDIATE_DIR)/node_protocol.pdl',
+        'node_protocol.pdl',
       ],
       'outputs': [
-        '<(SHARED_INTERMEDIATE_DIR)/node_protocol.json',
+        '<(SHARED_INTERMEDIATE_DIR)/src/node_protocol.json',
       ],
       'action': [
         'python',
-        'tools/inspector_protocol/ConvertProtocolToJSON.py',
+        'tools/inspector_protocol/convert_protocol_to_json.py',
         '<@(_inputs)',
         '<@(_outputs)',
       ],
@@ -95,8 +86,8 @@
     {
       'action_name': 'node_protocol_generated_sources',
       'inputs': [
-        '<(SHARED_INTERMEDIATE_DIR)/node_protocol_config.json',
-        '<(SHARED_INTERMEDIATE_DIR)/node_protocol.json',
+        'node_protocol_config.json',
+        '<(SHARED_INTERMEDIATE_DIR)/src/node_protocol.json',
         '<@(node_protocol_files)',
       ],
       'outputs': [
@@ -105,25 +96,25 @@
       'process_outputs_as_sources': 1,
       'action': [
         'python',
-        'tools/inspector_protocol/CodeGenerator.py',
+        'tools/inspector_protocol/code_generator.py',
         '--jinja_dir', '<@(protocol_tool_path)/..',
         '--output_base', '<(SHARED_INTERMEDIATE_DIR)/src/',
-        '--config', '<(SHARED_INTERMEDIATE_DIR)/node_protocol_config.json',
+        '--config', 'src/inspector/node_protocol_config.json',
       ],
       'message': 'Generating node protocol sources from protocol json',
     },
     {
       'action_name': 'concatenate_protocols',
       'inputs': [
-        '../../deps/v8/src/inspector/js_protocol.json',
-        '<(SHARED_INTERMEDIATE_DIR)/node_protocol.json',
+        '../../deps/v8/src/inspector/js_protocol.pdl',
+        '<(SHARED_INTERMEDIATE_DIR)/src/node_protocol.json',
       ],
       'outputs': [
         '<(SHARED_INTERMEDIATE_DIR)/concatenated_protocol.json',
       ],
       'action': [
         'python',
-        'tools/inspector_protocol/ConcatenateProtocols.py',
+        'tools/inspector_protocol/concatenate_protocols.py',
         '<@(_inputs)',
         '<@(_outputs)',
       ],

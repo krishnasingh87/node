@@ -37,7 +37,7 @@ let cntr = 0;
 }
 
 {
-  // copy c into b, without specifying sourceEnd
+  // Copy c into b, without specifying sourceEnd
   b.fill(++cntr);
   c.fill(++cntr);
   const copied = c.copy(b, 0, 0);
@@ -48,7 +48,7 @@ let cntr = 0;
 }
 
 {
-  // copy c into b, without specifying sourceStart
+  // Copy c into b, without specifying sourceStart
   b.fill(++cntr);
   c.fill(++cntr);
   const copied = c.copy(b, 0);
@@ -70,7 +70,7 @@ let cntr = 0;
 }
 
 {
-  // copy starting near end of b to c
+  // Copy starting near end of b to c
   b.fill(++cntr);
   c.fill(++cntr);
   const copied = b.copy(c, 0, b.length - Math.floor(c.length / 2));
@@ -113,7 +113,7 @@ bb.fill('hello crazy world');
 // Try to copy from before the beginning of b. Should not throw.
 b.copy(c, 0, 100, 10);
 
-// copy throws at negative sourceStart
+// Copy throws at negative sourceStart
 common.expectsError(
   () => Buffer.allocUnsafe(5).copy(Buffer.allocUnsafe(5), 0, -1),
   errorProperty);
@@ -128,14 +128,14 @@ common.expectsError(
   }
 }
 
-// throw with negative sourceEnd
+// Throw with negative sourceEnd
 common.expectsError(
   () => b.copy(c, 0, -1), errorProperty);
 
 // When sourceStart is greater than sourceEnd, zero copied
 assert.strictEqual(b.copy(c, 0, 100, 10), 0);
 
-// when targetStart > targetLength, zero copied
+// When targetStart > targetLength, zero copied
 assert.strictEqual(b.copy(c, 512, 0, 10), 0);
 
 // Test that the `target` can be a Uint8Array.

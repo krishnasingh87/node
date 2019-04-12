@@ -101,7 +101,7 @@ http.get({
   hostname: 'localhost',
   port: 80,
   path: '/',
-  agent: false  // create a new agent just for this one request
+  agent: false  // Create a new agent just for this one request
 }, (res) => {
   // Do stuff with response
 });
@@ -116,13 +116,19 @@ added: v0.3.4
   Can have the following fields:
   * `keepAlive` {boolean} Keep sockets around even when there are no
     outstanding requests, so they can be used for future requests without
-    having to reestablish a TCP connection. **Default:** `false`.
+    having to reestablish a TCP connection. Not to be confused with the
+    `keep-alive` value of the `Connection` header. The `Connection: keep-alive`
+    header is always sent when using an agent except when the `Connection`
+    header is explicitly specified or when the `keepAlive` and `maxSockets`
+    options are respectively set to `false` and `Infinity`, in which case
+    `Connection: close` will be used. **Default:** `false`.
   * `keepAliveMsecs` {number} When using the `keepAlive` option, specifies
     the [initial delay](net.html#net_socket_setkeepalive_enable_initialdelay)
     for TCP Keep-Alive packets. Ignored when the
     `keepAlive` option is `false` or `undefined`. **Default:** `1000`.
   * `maxSockets` {number} Maximum number of sockets to allow per
-    host. **Default:** `Infinity`.
+    host. Each request will use a new socket until the maximum is reached.
+    **Default:** `Infinity`.
   * `maxFreeSockets` {number} Maximum number of sockets to leave open
     in a free state. Only relevant if `keepAlive` is set to `true`.
     **Default:** `256`.
@@ -352,7 +358,7 @@ const proxy = http.createServer((req, res) => {
   res.end('okay');
 });
 proxy.on('connect', (req, cltSocket, head) => {
-  // connect to an origin server
+  // Connect to an origin server
   const srvUrl = url.parse(`http://${req.url}`);
   const srvSocket = net.connect(srvUrl.port, srvUrl.hostname, () => {
     cltSocket.write('HTTP/1.1 200 Connection Established\r\n' +
@@ -364,10 +370,10 @@ proxy.on('connect', (req, cltSocket, head) => {
   });
 });
 
-// now that proxy is running
+// Now that proxy is running
 proxy.listen(1337, '127.0.0.1', () => {
 
-  // make a request to a tunneling proxy
+  // Make a request to a tunneling proxy
   const options = {
     port: 1337,
     host: '127.0.0.1',
@@ -381,7 +387,7 @@ proxy.listen(1337, '127.0.0.1', () => {
   req.on('connect', (res, socket, head) => {
     console.log('got connected!');
 
-    // make a request over an HTTP tunnel
+    // Make a request over an HTTP tunnel
     socket.write('GET / HTTP/1.1\r\n' +
                  'Host: www.google.com:80\r\n' +
                  'Connection: close\r\n' +
@@ -410,8 +416,11 @@ the client should send the request body.
 added: v10.0.0
 -->
 
-Emitted when the server sends a 1xx response (excluding 101 Upgrade). This
-event is emitted with a callback containing an object with a status code.
+* `info` {Object}
+  * `statusCode` {integer}
+
+Emitted when the server sends a 1xx response (excluding 101 Upgrade). The
+listeners of this event will receive an object containing the status code.
 
 ```js
 const http = require('http');
@@ -426,8 +435,8 @@ const options = {
 const req = http.request(options);
 req.end();
 
-req.on('information', (res) => {
-  console.log(`Got information prior to main response: ${res.statusCode}`);
+req.on('information', (info) => {
+  console.log(`Got information prior to main response: ${info.statusCode}`);
 });
 ```
 
@@ -498,7 +507,7 @@ srv.on('upgrade', (req, socket, head) => {
   socket.pipe(socket); // echo back
 });
 
-// now that server is running
+// Now that server is running
 srv.listen(1337, '127.0.0.1', () => {
 
   // make a request
@@ -620,11 +629,11 @@ request.setHeader('content-type', 'text/html');
 request.setHeader('Content-Length', Buffer.byteLength(body));
 request.setHeader('Cookie', ['type=ninja', 'language=javascript']);
 const contentType = request.getHeader('Content-Type');
-// contentType is 'text/html'
+// 'contentType' is 'text/html'
 const contentLength = request.getHeader('Content-Length');
-// contentLength is of type number
+// 'contentLength' is of type number
 const cookie = request.getHeader('Cookie');
-// cookie is of type string[]
+// 'cookie' is of type string[]
 ```
 
 ### request.maxHeadersCount
@@ -638,7 +647,7 @@ Limits maximum response headers count. If set to 0, no limit will be applied.
 added: v0.4.0
 -->
 
-* {string} The request path. Read-only.
+* {string} The request path.
 
 ### request.removeHeader(name)
 <!-- YAML
@@ -739,7 +748,7 @@ req.once('response', (res) => {
   const ip = req.socket.localAddress;
   const port = req.socket.localPort;
   console.log(`Your IP address is ${ip} and your source port is ${port}.`);
-  // consume response object
+  // Consume response object
 });
 ```
 
@@ -1140,7 +1149,7 @@ This method signals to the server that all of the response headers and body
 have been sent; that server should consider this message complete.
 The method, `response.end()`, MUST be called on each response.
 
-If `data` is specified, it is equivalent to calling
+If `data` is specified, it is similar in effect to calling
 [`response.write(data, encoding)`][] followed by `response.end(callback)`.
 
 If `callback` is specified, it will be called when the response stream
@@ -1307,7 +1316,7 @@ with any headers passed to [`response.writeHead()`][], with the headers passed
 to [`response.writeHead()`][] given precedence.
 
 ```js
-// returns content-type = text/plain
+// Returns content-type = text/plain
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.setHeader('X-Foo', 'bar');
@@ -1500,7 +1509,7 @@ desired with potential future retrieval and modification, use
 [`response.setHeader()`][] instead.
 
 ```js
-// returns content-type = text/plain
+// Returns content-type = text/plain
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.setHeader('X-Foo', 'bar');
@@ -1845,7 +1854,7 @@ Found'`.
 <!-- YAML
 added: v0.1.13
 changes:
-  - version: v9.6.0
+  - version: v9.6.0, v8.12.0
     pr-url: https://github.com/nodejs/node/pull/15752
     description: The `options` argument is supported now.
 -->
@@ -1912,7 +1921,7 @@ http.get('http://nodejs.org/dist/index.json', (res) => {
   }
   if (error) {
     console.error(error.message);
-    // consume response data to free up memory
+    // Consume response data to free up memory
     res.resume();
     return;
   }
@@ -1969,41 +1978,44 @@ changes:
 
 * `url` {string | URL}
 * `options` {Object}
-  * `protocol` {string} Protocol to use. **Default:** `'http:'`.
+  * `agent` {http.Agent | boolean} Controls [`Agent`][] behavior. Possible
+    values:
+    * `undefined` (default): use [`http.globalAgent`][] for this host and port.
+    * `Agent` object: explicitly use the passed in `Agent`.
+    * `false`: causes a new `Agent` with default values to be used.
+  * `auth` {string} Basic authentication i.e. `'user:password'` to compute an
+    Authorization header.
+  * `createConnection` {Function} A function that produces a socket/stream to
+    use for the request when the `agent` option is not used. This can be used to
+    avoid creating a custom `Agent` class just to override the default
+    `createConnection` function. See [`agent.createConnection()`][] for more
+    details. Any [`Duplex`][] stream is a valid return value.
+  * `defaultPort` {number} Default port for the protocol. **Default:**
+    `agent.defaultPort` if an `Agent` is used, else `undefined`.
+  * `family` {number} IP address family to use when resolving `host` or
+    `hostname`. Valid values are `4` or `6`. When unspecified, both IP v4 and
+    v6 will be used.
+  * `headers` {Object} An object containing request headers.
   * `host` {string} A domain name or IP address of the server to issue the
     request to. **Default:** `'localhost'`.
   * `hostname` {string} Alias for `host`. To support [`url.parse()`][],
     `hostname` will be used if both `host` and `hostname` are specified.
-  * `family` {number} IP address family to use when resolving `host` or
-    `hostname`. Valid values are `4` or `6`. When unspecified, both IP v4 and
-    v6 will be used.
-  * `port` {number} Port of remote server. **Default:** `80`.
   * `localAddress` {string} Local interface to bind for network connections.
-  * `socketPath` {string} Unix Domain Socket (cannot be used if one of `host`
-     or `port` is specified, those specify a TCP Socket).
   * `method` {string} A string specifying the HTTP request method. **Default:**
     `'GET'`.
   * `path` {string} Request path. Should include query string if any.
     E.G. `'/index.html?page=12'`. An exception is thrown when the request path
     contains illegal characters. Currently, only spaces are rejected but that
     may change in the future. **Default:** `'/'`.
-  * `headers` {Object} An object containing request headers.
-  * `auth` {string} Basic authentication i.e. `'user:password'` to compute an
-    Authorization header.
-  * `agent` {http.Agent | boolean} Controls [`Agent`][] behavior. Possible
-    values:
-    * `undefined` (default): use [`http.globalAgent`][] for this host and port.
-    * `Agent` object: explicitly use the passed in `Agent`.
-    * `false`: causes a new `Agent` with default values to be used.
-  * `createConnection` {Function} A function that produces a socket/stream to
-    use for the request when the `agent` option is not used. This can be used to
-    avoid creating a custom `Agent` class just to override the default
-    `createConnection` function. See [`agent.createConnection()`][] for more
-    details. Any [`Duplex`][] stream is a valid return value.
-  * `timeout` {number}: A number specifying the socket timeout in milliseconds.
-    This will set the timeout before the socket is connected.
+  * `port` {number} Port of remote server. **Default:** `defaultPort` if set,
+    else `80`.
+  * `protocol` {string} Protocol to use. **Default:** `'http:'`.
   * `setHost` {boolean}: Specifies whether or not to automatically add the
     `Host` header. Defaults to `true`.
+  * `socketPath` {string} Unix Domain Socket (cannot be used if one of `host`
+     or `port` is specified, those specify a TCP Socket).
+  * `timeout` {number}: A number specifying the socket timeout in milliseconds.
+    This will set the timeout before the socket is connected.
 * `callback` {Function}
 * Returns: {http.ClientRequest}
 
@@ -2056,7 +2068,7 @@ req.on('error', (e) => {
   console.error(`problem with request: ${e.message}`);
 });
 
-// write data to request body
+// Write data to request body
 req.write(postData);
 req.end();
 ```
@@ -2079,7 +2091,7 @@ There are a few special headers that should be noted.
 
 * Sending an 'Expect' header will immediately send the request headers.
   Usually, when sending 'Expect: 100-continue', both a timeout and a listener
-  for the `'continue'` event should be set. See RFC2616 Section 8.2.3 for more
+  for the `'continue'` event should be set. See RFC 2616 Section 8.2.3 for more
   information.
 
 * Sending an Authorization header will override using the `auth` option

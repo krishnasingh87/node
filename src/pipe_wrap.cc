@@ -47,8 +47,6 @@ using v8::Object;
 using v8::String;
 using v8::Value;
 
-using AsyncHooks = Environment::AsyncHooks;
-
 MaybeLocal<Object> PipeWrap::Instantiate(Environment* env,
                                          AsyncWrap* parent,
                                          PipeWrap::SocketType type) {
@@ -74,7 +72,8 @@ void PipeWrap::Initialize(Local<Object> target,
   Local<FunctionTemplate> t = env->NewFunctionTemplate(New);
   Local<String> pipeString = FIXED_ONE_BYTE_STRING(env->isolate(), "Pipe");
   t->SetClassName(pipeString);
-  t->InstanceTemplate()->SetInternalFieldCount(1);
+  t->InstanceTemplate()
+    ->SetInternalFieldCount(StreamBase::kStreamBaseFieldCount);
 
   t->Inherit(LibuvStreamWrap::GetConstructorTemplate(env));
 
@@ -187,8 +186,7 @@ void PipeWrap::Fchmod(const v8::FunctionCallbackInfo<v8::Value>& args) {
   ASSIGN_OR_RETURN_UNWRAP(&wrap, args.Holder());
   CHECK(args[0]->IsInt32());
   int mode = args[0].As<Int32>()->Value();
-  int err = uv_pipe_chmod(reinterpret_cast<uv_pipe_t*>(&wrap->handle_),
-                          mode);
+  int err = uv_pipe_chmod(&wrap->handle_, mode);
   args.GetReturnValue().Set(err);
 }
 

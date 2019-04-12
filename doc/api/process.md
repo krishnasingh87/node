@@ -5,7 +5,12 @@
 
 The `process` object is a `global` that provides information about, and control
 over, the current Node.js process. As a global, it is always available to
-Node.js applications without using `require()`.
+Node.js applications without using `require()`. It can also be explicitly
+accessed using `require()`:
+
+```js
+const process = require('process');
+```
 
 ## Process Events
 
@@ -290,8 +295,8 @@ process.on('unhandledRejection', (reason, p) => {
 });
 
 somePromise.then((res) => {
-  return reportToUser(JSON.pasre(res)); // note the typo (`pasre`)
-}); // no `.catch()` or `.then()`
+  return reportToUser(JSON.pasre(res)); // Note the typo (`pasre`)
+}); // No `.catch()` or `.then()`
 ```
 
 The following will also trigger the `'unhandledRejection'` event to be
@@ -664,7 +669,7 @@ An example of the possible output looks like:
      node_shared_openssl: 'false',
      strict_aliasing: 'true',
      target_arch: 'x64',
-     v8_use_snapshot: 'true'
+     v8_use_snapshot: 1
    }
 }
 ```
@@ -949,6 +954,11 @@ emitMyWarning();
 <!-- YAML
 added: v0.1.27
 changes:
+  - version: v11.14.0
+    pr-url: https://github.com/nodejs/node/pull/26544
+    description: Worker threads will now use a copy of the parent thread’s
+                 `process.env` by default, configurable through the `env`
+                 option of the `Worker` constructor.
   - version: v10.0.0
     pr-url: https://github.com/nodejs/node/pull/18990
     description: Implicit conversion of variable value to string is deprecated.
@@ -978,8 +988,9 @@ An example of this object looks like:
 ```
 
 It is possible to modify this object, but such modifications will not be
-reflected outside the Node.js process. In other words, the following example
-would not work:
+reflected outside the Node.js process, or (unless explicitly requested)
+to other [`Worker`][] threads.
+In other words, the following example would not work:
 
 ```console
 $ node -e 'process.env.foo = "bar"' && echo $foo
@@ -1022,7 +1033,12 @@ console.log(process.env.test);
 // => 1
 ```
 
-`process.env` is read-only in [`Worker`][] threads.
+Unless explicitly specified when creating a [`Worker`][] instance,
+each [`Worker`][] thread has its own copy of `process.env`, based on its
+parent thread’s `process.env`, or whatever was specified as the `env` option
+to the [`Worker`][] constructor. Changes to `process.env` will not be visible
+across [`Worker`][] threads, and only the main thread can make changes that
+are visible to the operating system or to native add-ons.
 
 ## process.execArgv
 <!-- YAML
@@ -1286,7 +1302,7 @@ setTimeout(() => {
   // [ 1, 552 ]
 
   console.log(`Benchmark took ${diff[0] * NS_PER_SEC + diff[1]} nanoseconds`);
-  // benchmark took 1000000552 nanoseconds
+  // Benchmark took 1000000552 nanoseconds
 }, 1000);
 ```
 
@@ -1669,12 +1685,42 @@ added: v11.8.0
 reports for the current process. Additional documentation is available in the
 [report documentation][].
 
+### process.report.directory
+<!-- YAML
+added: v11.12.0
+-->
+
+* {string}
+
+Directory where the report is written. The default value is the empty string,
+indicating that reports are written to the current working directory of the
+Node.js process.
+
+```js
+console.log(`Report directory is ${process.report.directory}`);
+```
+
+### process.report.filename
+<!-- YAML
+added: v11.12.0
+-->
+
+* {string}
+
+Filename where the report is written. If set to the empty string, the output
+filename will be comprised of a timestamp, PID, and sequence number. The default
+value is the empty string.
+
+```js
+console.log(`Report filename is ${process.report.filename}`);
+```
+
 ### process.report.getReport([err])
 <!-- YAML
 added: v11.8.0
 -->
 
-* `err` {Error} A custom error used for reporting the JavsScript stack.
+* `err` {Error} A custom error used for reporting the JavaScript stack.
 * Returns: {string}
 
 Returns a JSON-formatted diagnostic report for the running process. The report's
@@ -1687,54 +1733,71 @@ console.log(data);
 
 Additional documentation is available in the [report documentation][].
 
-### process.report.setOptions([options]);
+### process.report.reportOnFatalError
 <!-- YAML
-added: v11.8.0
+added: v11.12.0
 -->
 
-* `options` {Object}
-  * `events` {string[]}
-    * `signal`: Generate a report in response to a signal raised on the process.
-    * `exception`: Generate a report on unhandled exceptions.
-    * `fatalerror`: Generate a report on internal fault
-      (such as out of memory errors or native assertions).
-  * `signal` {string} Sets or resets the signal for report generation
-    (not supported on Windows). **Default:** `'SIGUSR2'`.
-  * `filename` {string} Name of the file where the report is written.
-  * `path` {string} Directory where the report is written.
-    **Default:** the current working directory of the Node.js process.
+* {boolean}
 
-Configures the diagnostic reporting behavior. Upon invocation, the runtime
-is reconfigured to generate reports based on `options`. Several usage examples
-are shown below.
+If `true`, a diagnostic report is generated on fatal errors, such as out of
+memory errors or failed C++ assertions.
 
 ```js
-// Trigger a report on uncaught exceptions or fatal errors.
-process.report.setOptions({ events: ['exception', 'fatalerror'] });
-
-// Change the default path and filename of the report.
-process.report.setOptions({ filename: 'foo.json', path: '/home' });
-
-// Produce the report onto stdout, when generated. Special meaning is attached
-// to `stdout` and `stderr`. Usage of these will result in report being written
-// to the associated standard streams. URLs are not supported.
-process.report.setOptions({ filename: 'stdout' });
+console.log(`Report on fatal error: ${process.report.reportOnFatalError}`);
 ```
 
-Signal based report generation is not supported on Windows.
+### process.report.reportOnSignal
+<!-- YAML
+added: v11.12.0
+-->
 
-Additional documentation is available in the [report documentation][].
+* {boolean}
 
-### process.report.triggerReport([filename][, err])
+If `true`, a diagnostic report is generated when the process receives the
+signal specified by `process.report.signal`.
+
+```js
+console.log(`Report on signal: ${process.report.reportOnSignal}`);
+```
+
+### process.report.reportOnUncaughtException
+<!-- YAML
+added: v11.12.0
+-->
+
+* {boolean}
+
+If `true`, a diagnostic report is generated on uncaught exception.
+
+```js
+console.log(`Report on exception: ${process.report.reportOnUncaughtException}`);
+```
+
+### process.report.signal
+<!-- YAML
+added: v11.12.0
+-->
+
+* {string}
+
+The signal used to trigger the creation of a diagnostic report. Defaults to
+`'SIGUSR2'`.
+
+```js
+console.log(`Report signal: ${process.report.signal}`);
+```
+
+### process.report.writeReport([filename][, err])
 <!-- YAML
 added: v11.8.0
 -->
 
 * `filename` {string} Name of the file where the report is written. This
   should be a relative path, that will be appended to the directory specified in
-  `process.report.setOptions`, or the current working directory of the Node.js
+  `process.report.directory`, or the current working directory of the Node.js
   process, if unspecified.
-* `err` {Error} A custom error used for reporting the JavsScript stack.
+* `err` {Error} A custom error used for reporting the JavaScript stack.
 
 * Returns: {string} Returns the filename of the generated report.
 
@@ -1743,7 +1806,7 @@ filename includes the date, time, PID, and a sequence number. The report's
 JavaScript stack trace is taken from `err`, if present.
 
 ```js
-process.report.triggerReport();
+process.report.writeReport();
 ```
 
 Additional documentation is available in the [report documentation][].
@@ -2151,22 +2214,23 @@ console.log(process.versions);
 
 Will generate an object similar to:
 
-<!-- eslint-skip -->
-```js
-{ http_parser: '2.7.0',
-  node: '8.9.0',
-  v8: '6.3.292.48-node.6',
-  uv: '1.18.0',
+```console
+{ node: '11.13.0',
+  v8: '7.0.276.38-node.18',
+  uv: '1.27.0',
   zlib: '1.2.11',
-  ares: '1.13.0',
-  modules: '60',
-  nghttp2: '1.29.0',
-  napi: '2',
-  openssl: '1.0.2n',
-  icu: '60.1',
-  unicode: '10.0',
-  cldr: '32.0',
-  tz: '2016b' }
+  brotli: '1.0.7',
+  ares: '1.15.0',
+  modules: '67',
+  nghttp2: '1.34.0',
+  napi: '4',
+  llhttp: '1.1.1',
+  http_parser: '2.8.0',
+  openssl: '1.1.1b',
+  cldr: '34.0',
+  icu: '63.1',
+  tz: '2018e',
+  unicode: '11.0' }
 ```
 
 ## Exit Codes

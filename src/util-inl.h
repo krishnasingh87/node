@@ -186,10 +186,9 @@ inline v8::Local<v8::String> OneByteString(v8::Isolate* isolate,
 inline v8::Local<v8::String> OneByteString(v8::Isolate* isolate,
                                            const unsigned char* data,
                                            int length) {
-  return v8::String::NewFromOneByte(isolate,
-                                    reinterpret_cast<const uint8_t*>(data),
-                                    v8::NewStringType::kNormal,
-                                    length).ToLocalChecked();
+  return v8::String::NewFromOneByte(
+             isolate, data, v8::NewStringType::kNormal, length)
+      .ToLocalChecked();
 }
 
 void SwapBytes16(char* data, size_t nbytes) {
@@ -272,6 +271,17 @@ std::string ToLower(const std::string& in) {
   std::string out(in.size(), 0);
   for (size_t i = 0; i < in.size(); ++i)
     out[i] = ToLower(in[i]);
+  return out;
+}
+
+char ToUpper(char c) {
+  return c >= 'a' && c <= 'z' ? (c - 'a') + 'A' : c;
+}
+
+std::string ToUpper(const std::string& in) {
+  std::string out(in.size(), 0);
+  for (size_t i = 0; i < in.size(); ++i)
+    out[i] = ToUpper(in[i]);
   return out;
 }
 
@@ -464,6 +474,32 @@ SlicedArguments::SlicedArguments(
   AllocateSufficientStorage(size);
   for (size_t i = 0; i < size; ++i)
     (*this)[i] = args[i + start];
+}
+
+template <typename T, size_t S>
+ArrayBufferViewContents<T, S>::ArrayBufferViewContents(
+    v8::Local<v8::Value> value) {
+  CHECK(value->IsArrayBufferView());
+  Read(value.As<v8::ArrayBufferView>());
+}
+
+template <typename T, size_t S>
+ArrayBufferViewContents<T, S>::ArrayBufferViewContents(
+    v8::Local<v8::ArrayBufferView> abv) {
+  Read(abv);
+}
+
+template <typename T, size_t S>
+void ArrayBufferViewContents<T, S>::Read(v8::Local<v8::ArrayBufferView> abv) {
+  static_assert(sizeof(T) == 1, "Only supports one-byte data at the moment");
+  length_ = abv->ByteLength();
+  if (length_ > sizeof(stack_storage_) || abv->HasBuffer()) {
+    data_ = static_cast<T*>(abv->Buffer()->GetContents().Data()) +
+        abv->ByteOffset();
+  } else {
+    abv->CopyContents(stack_storage_, sizeof(stack_storage_));
+    data_ = stack_storage_;
+  }
 }
 
 }  // namespace node
